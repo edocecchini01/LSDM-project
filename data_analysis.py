@@ -1,4 +1,5 @@
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
 from pyspark import SparkContext, SparkConf
 
 # ============================================================================
@@ -16,6 +17,9 @@ def load_machine_events(spark, path):
     Returns:
         DataFrame: Machine events data
     """
+    me_cols = ["time", "machine_id", "event_type", "platform_id", "cpus", "memory"]
+    df = spark.read.csv(path, header=False, inferSchema=False)
+    return df.toDF(*me_cols)
     return spark.read.csv(path, header=True, inferSchema=True)
 
 
@@ -44,7 +48,9 @@ def load_job_events(spark, path):
     Returns:
         DataFrame: Job events data
     """
-    return spark.read.csv(path, header=True, inferSchema=True)
+    me_cols = ["time", "missing info", "job ID", "event type", "user", "scheduling class", "job name", "logical job name"]
+    df = spark.read.csv(path, header=False, inferSchema=False)
+    return df.toDF(*me_cols)
 
 
 def load_task_events(spark, path):
@@ -58,7 +64,9 @@ def load_task_events(spark, path):
     Returns:
         DataFrame: Task events data
     """
-    return spark.read.csv(path, header=True, inferSchema=True)
+    me_cols = ["time", "missing info", "job ID", "task index", "machine ID", "event type", "user", "scheduling class", "priority", "CPU request", "memory request", "disk space request", "different machine restrictions"]
+    df = spark.read.csv(path, header=False, inferSchema=False)
+    return df.toDF(*me_cols)
 
 
 def load_task_usage(spark, path):
@@ -288,6 +296,7 @@ def main():
     """
 
     BASE_PATH_EDO = "/home/edoardo/Desktop/UNI/LSDMG/proj/data"
+    BASE_PATH_GIU = "/home/giuse_02/Documents/Sparks/ProjectSparks/data"
 
     spark = SparkSession.builder \
         .appName("LSDMG-Analysis") \
@@ -298,8 +307,8 @@ def main():
     sc.setLogLevel("ERROR")
 
     # Spark legge automaticamente file .gz e supporta wildcard / directory
-    # job_events = load_job_events(spark, f"{BASE_PATH_EDO}/job_events/*")
-    # task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+    job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
+    task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
 
@@ -316,6 +325,10 @@ def main():
     # res = analysis_6_eviction_by_scheduling_class(task_events)
     # res.show(20)
 
+    job_events.cache()
+    task_events.cache()
+    job_events.show(10)
+    task_events.show(10)
     spark.stop()
     
 
