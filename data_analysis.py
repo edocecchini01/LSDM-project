@@ -243,8 +243,8 @@ def analysis_5_killed_evicted_percentage(job_events, task_events):
     Returns:
         dict: Percentages for jobs and tasks
     """
-    job_events = job_events.withColumn("job_id", col("job_id").cast("long"))
-    task_events = task_events.withColumn("job_id", col("job_id").cast("long"))
+    job_events = job_events.withColumn("job_id", F.col("job_id").cast("long"))
+    task_events = task_events.withColumn("job_id", F.col("job_id").cast("long"))
     # Aggiunta di .distinct() perchè alcuni task evited potrebbero essere ricontati perchè ritornano disponibili e cambiano il loro stato finale in submit
     # nota: aggiungendo .distinct() è stato necessario inserire anche su che parametro deve essere fatta la distizione, quindi è stato inserito anche .select()
     total_job_events = job_events.select("job_id").distinct().count()
