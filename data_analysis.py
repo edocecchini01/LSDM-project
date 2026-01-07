@@ -1,12 +1,13 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 from pyspark import SparkContext, SparkConf
 
 # ============================================================================
 # DATA LOADING FUNCTIONS
 # ============================================================================
 
-def load_machine_events(spark, path):
+def load_machine_events(spark, path, do_cast=True):
     """
     Load machine events data.
     
@@ -18,8 +19,21 @@ def load_machine_events(spark, path):
         DataFrame: Machine events data
     """
     me_cols = ["time", "machine_id", "event_type", "platform_id", "cpus", "memory"]
-    df = spark.read.csv(path, header=False, inferSchema=False)
-    return df.toDF(*me_cols)
+    df = spark.read.csv(path, header=False, inferSchema=False).toDF(*me_cols)
+
+    if do_cast:
+        df = df.select(
+            F.col("time").cast("long").alias("time"),
+            F.col("machine_id").cast("long").alias("machine_id"),
+            F.col("event_type").cast("int").alias("event_type"),
+            F.col("platform_id"),
+            F.col("cpus").cast("float").alias("cpus"),
+            F.col("memory").cast("float").alias("memory"),
+        )
+
+    df = df.dropDuplicates()
+
+    return df
 
 
 def load_machine_attributes(spark, path):
@@ -113,7 +127,7 @@ def analysis_1_cpu_distribution(machine_events_df):
     machine_events_df.groupBy(["cpus"]).count().show()
     pass
 
-
+# da verificare e non considerati event_type 2 (supposizione che durante il down non ci sono update)
 def analysis_2_maintenance_loss(machine_events_df):
     """
     Q2: What is the percentage of computational power lost due to maintenance?
@@ -124,7 +138,39 @@ def analysis_2_maintenance_loss(machine_events_df):
     Returns:
         float: Percentage of computational power lost
     """
-    # TODO: Implement analysis
+
+    w = Window.partitionBy("machine_id").orderBy("time")
+
+    df = machine_events_df.withColumn("prev_event", F.lag("event_type", 1).over(w)) \
+                            .withColumn("prev_time", F.lag("time", 1).over(w)) \
+                            .withColumn("prev_cpus", F.lag("cpus", 1).over(w))
+    
+    df1 = df.withColumn("effective_prev_cpus", F.coalesce(F.col("prev_cpus"), F.col("cpus")))
+
+    adds_after_remove = df1.filter(
+        (F.col("event_type") == 0) &
+        (F.col("prev_event") == 1) &
+        (F.col("prev_time").isNotNull())
+    )
+
+    adds_with_loss = adds_after_remove.withColumn("downtime", F.col("time") - F.col("prev_time")) \
+                                      .withColumn("cpu_loss", F.col("downtime") * F.col("effective_prev_cpus"))
+    
+    total_cpu_lost = adds_with_loss.agg(F.sum("cpu_loss").alias("total_cpu_lost")).collect()[0]["total_cpu_lost"] or 0.0
+
+    min_t, max_t = machine_events_df.agg(F.min("time").alias("min_t"), F.max("time").alias("max_t")).first()
+
+    obs_window = (max_t - min_t) if (min_t is not None and max_t is not None) else 0
+
+    total_cpus = machine_events_df.select("machine_id", "cpus").dropDuplicates(["machine_id"]) \
+                   .agg(F.sum("cpus").alias("sum_cpus")).collect()[0]["sum_cpus"] or 0.0
+
+    total_possible = total_cpus * float(obs_window) if obs_window and total_cpus else 0.0
+
+    pct_lost = (total_cpu_lost / total_possible * 100.0) if total_possible > 0 else 0.0
+
+    print(pct_lost)
+    
     pass
 
 
@@ -138,7 +184,19 @@ def analysis_3_maintenance_by_class(machine_events_df):
     Returns:
         DataFrame: Maintenance rate by machine class
     """
-    # TODO: Implement analysis
+
+    w = Window.partitionBy("machine_id").orderBy("time")
+    df = machine_events_df.withColumn("prev_event", F.lag("event_type", 1).over(w))
+    
+    df = df.groupBy("cpus") \
+        .agg(
+            F.sum(F.when((F.col("event_type") == 1) & (F.col("prev_event") == 0), 1).otherwise(0)).alias("num_down"),
+            F.countDistinct("machine_id").alias("num_machines")
+        ) \
+        .withColumn("maintenance_rate", F.col("num_down") / F.col("num_machines"))
+    
+    df.show()
+    
     pass
 
 
@@ -306,8 +364,8 @@ def main():
     sc.setLogLevel("ERROR")
 
     # Spark legge automaticamente file .gz e supporta wildcard / directory
-    job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
-    task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
+    #job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
+    #task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     
     machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
@@ -324,11 +382,8 @@ def main():
 
     # esempio: chiamare analisi implementate
     analysis_1_cpu_distribution(machine_events)
-
-    job_events.cache()
-    task_events.cache()
-    job_events.show(10)
-    task_events.show(10)
+    analysis_2_maintenance_loss(machine_events)
+    analysis_3_maintenance_by_class(machine_events)
     spark.stop()
     
 
