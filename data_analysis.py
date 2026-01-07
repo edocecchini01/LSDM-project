@@ -1,5 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
+from pyspark.sql.functions import desc
 from pyspark import SparkContext, SparkConf
 
 # ============================================================================
@@ -47,7 +48,7 @@ def load_job_events(spark, path):
     Returns:
         DataFrame: Job events data
     """
-    me_cols = ["time", "missing info", "job ID", "event type", "user", "scheduling class", "job name", "logical job name"]
+    me_cols = ["time", "missing_info", "job_ID", "event_type", "user", "scheduling_class", "job_name", "logical_job_name"]
     df = spark.read.csv(path, header=False, inferSchema=False)
     return df.toDF(*me_cols)
 
@@ -63,7 +64,7 @@ def load_task_events(spark, path):
     Returns:
         DataFrame: Task events data
     """
-    me_cols = ["time", "missing info", "job ID", "task index", "machine ID", "event type", "user", "scheduling class", "priority", "CPU request", "memory request", "disk space request", "different machine restrictions"]
+    me_cols = ["time", "missing_info", "job_ID", "task_index", "machine_ID", "event_type", "user", "scheduling_class", "priority", "CPU_request", "memory_request", "disk_space_request", "different_machine_restrictions"]
     df = spark.read.csv(path, header=False, inferSchema=False)
     return df.toDF(*me_cols)
 
@@ -146,7 +147,7 @@ def analysis_3_maintenance_by_class(machine_events_df):
 # ANALYSIS FUNCTIONS - JOBS AND TASKS
 # ============================================================================
 
-def analysis_4_jobs_tasks_distribution(job_events_df, task_events_df):
+def analysis_4_jobs_tasks_distribution(job_events, task_events):
     """
     Q4: Distribution of jobs/tasks per scheduling class.
     
@@ -157,11 +158,14 @@ def analysis_4_jobs_tasks_distribution(job_events_df, task_events_df):
     Returns:
         DataFrame: Distribution results
     """
-    # TODO: Implement analysis
+    job_events_by_scheduling_class = job_events.groupBy("scheduling_class").count()
+    task_events_by_scheduling_class = task_events.groupBy("scheduling_class").count()
+    job_events_by_scheduling_class.orderBy(desc("scheduling_class")).show()
+    task_events_by_scheduling_class.orderBy(desc("scheduling_class")).show()
     pass
 
 
-def analysis_5_killed_evicted_percentage(job_events_df, task_events_df):
+def analysis_5_killed_evicted_percentage(job_events, task_events):
     """
     Q5: Percentage of jobs/tasks that got killed or evicted.
     
@@ -173,6 +177,26 @@ def analysis_5_killed_evicted_percentage(job_events_df, task_events_df):
         dict: Percentages for jobs and tasks
     """
     # TODO: Implement analysis
+    total_job_events = job_events.count()
+    total_task_events = task_events.count()
+
+    job_events_killed_or_evicted= job_events.filter((job_events.event_type == 5) | (job_events.event_type == 2))
+    count_job = job_events_killed_or_evicted.count()
+    task_events_killed_or_evicted= task_events.filter((task_events.event_type == 5) | (task_events.event_type == 2))
+    count_task = task_events_killed_or_evicted.count()
+    
+    if count_job == 0:
+        print("No job has been killed or evicted")
+    else:
+        percentage_job = (count_job / total_job_events) * 100
+        print(f"Percentuale Job killed or Evicted: {percentage_job:.2f}%")
+
+
+    if count_task == 0:
+        print("No task has been killed or evicted")
+    else:
+        percentage_task = (count_task / total_task_events) * 100
+        print(f"Percentuale Task Killed or Evicted: {percentage_task:.2f}%")
     pass
 
 
@@ -310,7 +334,7 @@ def main():
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     
-    machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
+    #machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     #schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
 
     # sanity checks (evita count() su dataset molto grandi in produzione)
@@ -323,12 +347,13 @@ def main():
     # task_usage.cache()
 
     # esempio: chiamare analisi implementate
-    analysis_1_cpu_distribution(machine_events)
+    #analysis_1_cpu_distribution(machine_events)
+    print("#4 Analysis")
+    analysis_4_jobs_tasks_distribution(job_events, task_events)
+    print("#5 Analysis")
+    analysis_5_killed_evicted_percentage(job_events, task_events)
 
-    job_events.cache()
-    task_events.cache()
-    job_events.show(10)
-    task_events.show(10)
+
     spark.stop()
     
 
