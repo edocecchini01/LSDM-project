@@ -348,10 +348,10 @@ def main():
 
     # esempio: chiamare analisi implementate
     #analysis_1_cpu_distribution(machine_events)
-    print("#4 Analysis")
-    analysis_4_jobs_tasks_distribution(job_events, task_events)
-    print("#5 Analysis")
-    analysis_5_killed_evicted_percentage(job_events, task_events)
+    #print("#4 Analysis")
+    #analysis_4_jobs_tasks_distribution(job_events, task_events)
+    #print("#5 Analysis")
+    #analysis_5_killed_evicted_percentage(job_events, task_events)
 
 
     spark.stop()
