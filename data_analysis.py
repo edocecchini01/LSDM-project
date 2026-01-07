@@ -127,7 +127,7 @@ def analysis_1_cpu_distribution(machine_events_df):
     machine_events_df.groupBy(["cpus"]).count().show()
     pass
 
-# da verificare e non considerati event_type 2 (supposizione che durante il down non ci sono update)
+# not take in account the change of the machine (event_type = 2)
 def analysis_2_maintenance_loss(machine_events_df):
     """
     Q2: What is the percentage of computational power lost due to maintenance?
@@ -158,21 +158,31 @@ def analysis_2_maintenance_loss(machine_events_df):
     
     total_cpu_lost = adds_with_loss.agg(F.sum("cpu_loss").alias("total_cpu_lost")).collect()[0]["total_cpu_lost"] or 0.0
 
-    min_t, max_t = machine_events_df.agg(F.min("time").alias("min_t"), F.max("time").alias("max_t")).first()
+    max_t = machine_events_df.agg(F.max("time")).first()[0]
 
-    obs_window = (max_t - min_t) if (min_t is not None and max_t is not None) else 0
-
-    total_cpus = machine_events_df.select("machine_id", "cpus").dropDuplicates(["machine_id"]) \
-                   .agg(F.sum("cpus").alias("sum_cpus")).collect()[0]["sum_cpus"] or 0.0
-
-    total_possible = total_cpus * float(obs_window) if obs_window and total_cpus else 0.0
-
+    first_appearance = machine_events_df.groupBy("machine_id") \
+        .agg(
+            F.min("time").alias("first_time"),
+            F.first("cpus").alias("cpus")
+        )
+    
+    capacity_per_machine = first_appearance.withColumn(
+        "available_time", 
+        max_t - F.col("first_time")
+    ).withColumn(
+        "cpu_capacity",
+        F.col("available_time") * F.col("cpus")
+    )
+    
+    total_possible = capacity_per_machine.agg(
+        F.sum("cpu_capacity")
+    ).collect()[0]["sum(cpu_capacity)"] or 0.0
+    
     pct_lost = (total_cpu_lost / total_possible * 100.0) if total_possible > 0 else 0.0
 
     print(pct_lost)
     
     pass
-
 
 def analysis_3_maintenance_by_class(machine_events_df):
     """
