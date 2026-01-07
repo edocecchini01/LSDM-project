@@ -1,1 +1,363 @@
 from pyspark import SparkContext, SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
+
+# ============================================================================
+# CONFIGURATION AND INITIALIZATION
+# ============================================================================
+
+def init_spark(app_name="Google_Cluster_Analysis"):
+    """
+    Initialize Spark session with appropriate configuration.
+    
+    Returns:
+        SparkSession: Configured Spark session
+    """
+    spark = SparkSession.builder \
+        .appName(app_name) \
+        .config("spark.some.config.option", "value") \
+        .getOrCreate()
+    return spark
+
+
+# ============================================================================
+# DATA LOADING FUNCTIONS
+# ============================================================================
+
+def load_machine_events(spark, path):
+    """
+    Load machine events data.
+    
+    Args:
+        spark: SparkSession object
+        path: Path to machine events CSV file
+        
+    Returns:
+        DataFrame: Machine events data
+    """
+    return spark.read.csv(path, header=True, inferSchema=True)
+
+
+def load_machine_attributes(spark, path):
+    """
+    Load machine attributes data.
+    
+    Args:
+        spark: SparkSession object
+        path: Path to machine attributes CSV file
+        
+    Returns:
+        DataFrame: Machine attributes data
+    """
+    return spark.read.csv(path, header=True, inferSchema=True)
+
+
+def load_job_events(spark, path):
+    """
+    Load job events data.
+    
+    Args:
+        spark: SparkSession object
+        path: Path to job events CSV file
+        
+    Returns:
+        DataFrame: Job events data
+    """
+    return spark.read.csv(path, header=True, inferSchema=True)
+
+
+def load_task_events(spark, path):
+    """
+    Load task events data.
+    
+    Args:
+        spark: SparkSession object
+        path: Path to task events CSV file
+        
+    Returns:
+        DataFrame: Task events data
+    """
+    return spark.read.csv(path, header=True, inferSchema=True)
+
+
+def load_task_usage(spark, path):
+    """
+    Load task usage data.
+    
+    Args:
+        spark: SparkSession object
+        path: Path to task usage CSV file
+        
+    Returns:
+        DataFrame: Task usage data
+    """
+    return spark.read.csv(path, header=True, inferSchema=True)
+
+
+def load_schema(spark, path):
+    """
+    Load schema information.
+    
+    Args:
+        spark: SparkSession object
+        path: Path to schema CSV file
+        
+    Returns:
+        DataFrame: Schema data
+    """
+    return spark.read.csv(path, header=True, inferSchema=True)
+
+
+# ============================================================================
+# ANALYSIS FUNCTIONS - MACHINES
+# ============================================================================
+
+def analysis_1_cpu_distribution(machine_events_df):
+    """
+    Q1: What is the distribution of machines according to their CPU capacity?
+    
+    Args:
+        machine_events_df: Machine events DataFrame
+        
+    Returns:
+        DataFrame: CPU capacity distribution results
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_2_maintenance_loss(machine_events_df):
+    """
+    Q2: What is the percentage of computational power lost due to maintenance?
+    
+    Args:
+        machine_events_df: Machine events DataFrame
+        
+    Returns:
+        float: Percentage of computational power lost
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_3_maintenance_by_class(machine_events_df):
+    """
+    Q3: Is there a class of machines with higher maintenance rate?
+    
+    Args:
+        machine_events_df: Machine events DataFrame
+        
+    Returns:
+        DataFrame: Maintenance rate by machine class
+    """
+    # TODO: Implement analysis
+    pass
+
+
+# ============================================================================
+# ANALYSIS FUNCTIONS - JOBS AND TASKS
+# ============================================================================
+
+def analysis_4_jobs_tasks_distribution(job_events_df, task_events_df):
+    """
+    Q4: Distribution of jobs/tasks per scheduling class.
+    
+    Args:
+        job_events_df: Job events DataFrame
+        task_events_df: Task events DataFrame
+        
+    Returns:
+        DataFrame: Distribution results
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_5_killed_evicted_percentage(job_events_df, task_events_df):
+    """
+    Q5: Percentage of jobs/tasks that got killed or evicted.
+    
+    Args:
+        job_events_df: Job events DataFrame
+        task_events_df: Task events DataFrame
+        
+    Returns:
+        dict: Percentages for jobs and tasks
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_6_eviction_by_scheduling_class(task_events_df):
+    """
+    Q6: Do tasks with low scheduling class have higher eviction probability?
+    
+    Args:
+        task_events_df: Task events DataFrame
+        
+    Returns:
+        DataFrame: Eviction probability by scheduling class
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_7_task_locality(task_events_df):
+    """
+    Q7: Do tasks from the same job run on the same machine?
+    
+    Args:
+        task_events_df: Task events DataFrame
+        
+    Returns:
+        DataFrame: Locality analysis results
+    """
+    # TODO: Implement analysis
+    pass
+
+
+# ============================================================================
+# ANALYSIS FUNCTIONS - RESOURCE USAGE
+# ============================================================================
+
+def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
+    """
+    Q8: Do tasks requesting more resources consume more resources?
+    
+    Args:
+        task_events_df: Task events DataFrame
+        task_usage_df: Task usage DataFrame
+        
+    Returns:
+        DataFrame: Correlation analysis results
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_9_consumption_peaks_vs_eviction(machine_events_df, task_events_df, task_usage_df):
+    """
+    Q9: Correlation between resource consumption peaks and task evictions.
+    
+    Args:
+        machine_events_df: Machine events DataFrame
+        task_events_df: Task events DataFrame
+        task_usage_df: Task usage DataFrame
+        
+    Returns:
+        DataFrame: Correlation results
+    """
+    # TODO: Implement analysis
+    pass
+
+
+def analysis_10_overcommitment_frequency(machine_events_df, task_events_df, task_usage_df):
+    """
+    Q10: How often are machine resources over-committed?
+    
+    Args:
+        machine_events_df: Machine events DataFrame
+        task_events_df: Task events DataFrame
+        task_usage_df: Task usage DataFrame
+        
+    Returns:
+        DataFrame: Overcommitment frequency results
+    """
+    # TODO: Implement analysis
+    pass
+
+
+# ============================================================================
+# ORIGINAL ANALYSES
+# ============================================================================
+
+def analysis_11_original_question_1():
+    """
+    Q11: Your original question 1.
+    
+    Motivation: [Explain the originality and relevance]
+    
+    Returns:
+        DataFrame: Analysis results
+    """
+    # TODO: Implement original analysis
+    pass
+
+
+def analysis_12_original_question_2():
+    """
+    Q12: Your original question 2.
+    
+    Motivation: [Explain the originality and relevance]
+    
+    Returns:
+        DataFrame: Analysis results
+    """
+    # TODO: Implement original analysis
+    pass
+
+
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def save_results(df, output_path, format="csv"):
+    """
+    Save analysis results to file.
+    
+    Args:
+        df: DataFrame to save
+        output_path: Output file path
+        format: Output format (csv, parquet, json)
+    """
+    if format == "csv":
+        df.coalesce(1).write.csv(output_path, header=True, mode="overwrite")
+    elif format == "parquet":
+        df.write.parquet(output_path, mode="overwrite")
+    elif format == "json":
+        df.write.json(output_path, mode="overwrite")
+
+
+def display_results(df, limit=20):
+    """
+    Display analysis results.
+    
+    Args:
+        df: DataFrame to display
+        limit: Number of rows to show
+    """
+    df.show(limit, truncate=False)
+
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+def main():
+    """
+    Main execution function.
+    Execute all analyses and save results.
+    """
+    # Initialize Spark
+    spark = init_spark()
+    
+    # Define data paths
+    BASE_PATH = "/path/to/data"  # TODO: Update with actual path
+    
+    # Load data
+    machine_events = load_machine_events(spark, f"{BASE_PATH}/machine_events.csv")
+    machine_attributes = load_machine_attributes(spark, f"{BASE_PATH}/machine_attributes.csv")
+    job_events = load_job_events(spark, f"{BASE_PATH}/job_events.csv")
+    task_events = load_task_events(spark, f"{BASE_PATH}/task_events.csv")
+    task_usage = load_task_usage(spark, f"{BASE_PATH}/task_usage.csv")
+    
+    # Run analyses
+    # TODO: Call analysis functions and save results
+    
+    # Stop Spark
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
