@@ -16,7 +16,9 @@ def load_machine_events(spark, path):
     Returns:
         DataFrame: Machine events data
     """
-    return spark.read.csv(path, header=True, inferSchema=True)
+    me_cols = ["time", "machine_id", "event_type", "platform_id", "cpus", "memory"]
+    df = spark.read.csv(path, header=False, inferSchema=False)
+    return df.toDF(*me_cols)
 
 
 def load_machine_attributes(spark, path):
@@ -103,7 +105,7 @@ def analysis_1_cpu_distribution(machine_events_df):
     Returns:
         DataFrame: CPU capacity distribution results
     """
-    # TODO: Implement analysis
+    
     pass
 
 
@@ -301,7 +303,10 @@ def main():
     # job_events = load_job_events(spark, f"{BASE_PATH_EDO}/job_events/*")
     # task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
     # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
-    # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
+    
+    machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
+    machine_events.show(10,truncate=False)
+    #schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
 
     # sanity checks (evita count() su dataset molto grandi in produzione)
     # print("job_events rows:", job_events.count())
