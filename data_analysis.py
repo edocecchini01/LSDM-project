@@ -1,25 +1,4 @@
 from pyspark import SparkContext, SparkConf
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
-
-# ============================================================================
-# CONFIGURATION AND INITIALIZATION
-# ============================================================================
-
-def init_spark(app_name="Google_Cluster_Analysis"):
-    """
-    Initialize Spark session with appropriate configuration.
-    
-    Returns:
-        SparkSession: Configured Spark session
-    """
-    spark = SparkSession.builder \
-        .appName(app_name) \
-        .config("spark.some.config.option", "value") \
-        .getOrCreate()
-    return spark
-
 
 # ============================================================================
 # DATA LOADING FUNCTIONS
@@ -297,39 +276,6 @@ def analysis_12_original_question_2():
     # TODO: Implement original analysis
     pass
 
-
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
-
-def save_results(df, output_path, format="csv"):
-    """
-    Save analysis results to file.
-    
-    Args:
-        df: DataFrame to save
-        output_path: Output file path
-        format: Output format (csv, parquet, json)
-    """
-    if format == "csv":
-        df.coalesce(1).write.csv(output_path, header=True, mode="overwrite")
-    elif format == "parquet":
-        df.write.parquet(output_path, mode="overwrite")
-    elif format == "json":
-        df.write.json(output_path, mode="overwrite")
-
-
-def display_results(df, limit=20):
-    """
-    Display analysis results.
-    
-    Args:
-        df: DataFrame to display
-        limit: Number of rows to show
-    """
-    df.show(limit, truncate=False)
-
-
 # ============================================================================
 # MAIN EXECUTION
 # ============================================================================
@@ -339,24 +285,20 @@ def main():
     Main execution function.
     Execute all analyses and save results.
     """
-    # Initialize Spark
-    spark = init_spark()
     
     # Define data paths
-    BASE_PATH = "/path/to/data"  # TODO: Update with actual path
+    #BASE_PATH = "/path/to/data"  # TODO: Update with actual path
     
     # Load data
-    machine_events = load_machine_events(spark, f"{BASE_PATH}/machine_events.csv")
-    machine_attributes = load_machine_attributes(spark, f"{BASE_PATH}/machine_attributes.csv")
-    job_events = load_job_events(spark, f"{BASE_PATH}/job_events.csv")
-    task_events = load_task_events(spark, f"{BASE_PATH}/task_events.csv")
-    task_usage = load_task_usage(spark, f"{BASE_PATH}/task_usage.csv")
+    #machine_events = load_machine_events(spark, f"{BASE_PATH}/machine_events.csv")
+    #machine_attributes = load_machine_attributes(spark, f"{BASE_PATH}/machine_attributes.csv")
+    #job_events = load_job_events(spark, f"{BASE_PATH}/job_events.csv")
+    #task_events = load_task_events(spark, f"{BASE_PATH}/task_events.csv")
+    #task_usage = load_task_usage(spark, f"{BASE_PATH}/task_usage.csv")
     
     # Run analyses
     # TODO: Call analysis functions and save results
     
-    # Stop Spark
-    spark.stop()
 
 
 if __name__ == "__main__":
