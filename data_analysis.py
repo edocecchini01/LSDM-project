@@ -105,7 +105,7 @@ def analysis_1_cpu_distribution(machine_events_df):
     Returns:
         DataFrame: CPU capacity distribution results
     """
-    
+    machine_events_df.groupBy(["cpus"]).count().show()
     pass
 
 
@@ -305,7 +305,6 @@ def main():
     # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     
     machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
-    machine_events.show(10,truncate=False)
     #schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
 
     # sanity checks (evita count() su dataset molto grandi in produzione)
@@ -318,8 +317,7 @@ def main():
     # task_usage.cache()
 
     # esempio: chiamare analisi implementate
-    # res = analysis_6_eviction_by_scheduling_class(task_events)
-    # res.show(20)
+    analysis_1_cpu_distribution(machine_events)
 
     spark.stop()
     
