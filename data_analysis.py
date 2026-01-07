@@ -243,13 +243,16 @@ def analysis_5_killed_evicted_percentage(job_events, task_events):
     Returns:
         dict: Percentages for jobs and tasks
     """
-    # TODO: Implement analysis
-    total_job_events = job_events.count()
-    total_task_events = task_events.count()
+    job_events = job_events.withColumn("job_id", col("job_id").cast("long"))
+    task_events = task_events.withColumn("job_id", col("job_id").cast("long"))
+    # Aggiunta di .distinct() perchè alcuni task evited potrebbero essere ricontati perchè ritornano disponibili e cambiano il loro stato finale in submit
+    # nota: aggiungendo .distinct() è stato necessario inserire anche su che parametro deve essere fatta la distizione, quindi è stato inserito anche .select()
+    total_job_events = job_events.select("job_id").distinct().count()
+    total_task_events = task_events.select("job_id", "task_index").distinct().count()
 
-    job_events_killed_or_evicted= job_events.filter((job_events.event_type == 5) | (job_events.event_type == 2))
+    job_events_killed_or_evicted= job_events.filter((job_events.event_type == 5) | (job_events.event_type == 2)).select("job_id").distinct()
     count_job = job_events_killed_or_evicted.count()
-    task_events_killed_or_evicted= task_events.filter((task_events.event_type == 5) | (task_events.event_type == 2))
+    task_events_killed_or_evicted= task_events.filter((task_events.event_type == 5) | (task_events.event_type == 2)).select("job_id", "task_index").distinct()
     count_task = task_events_killed_or_evicted.count()
     
     if count_job == 0:
@@ -267,7 +270,7 @@ def analysis_5_killed_evicted_percentage(job_events, task_events):
     pass
 
 
-def analysis_6_eviction_by_scheduling_class(task_events_df):
+def analysis_6_eviction_by_scheduling_class(task_events):
     """
     Q6: Do tasks with low scheduling class have higher eviction probability?
     
@@ -278,6 +281,27 @@ def analysis_6_eviction_by_scheduling_class(task_events_df):
         DataFrame: Eviction probability by scheduling class
     """
     # TODO: Implement analysis
+    
+    task_events_low_scheduling_class= task_events.filter(task_events.scheduling_class < 3)
+    total_events_low_scheduling_class = task_events_low_scheduling_class.select("job_id", "task_index").distinct().count()
+    task_events_high_scheduling_class = task_events.filter(task_events.scheduling_class == 3)
+    total_events_high_scheduling_class = task_events_high_scheduling_class.select("job_id", "task_index").distinct().count()
+
+    count_evicted_low = task_events_low_scheduling_class.filter(task_events_low_scheduling_class.event_type == 2).select("job_id", "task_index").distinct().count()
+    count_evicted_high = task_events_high_scheduling_class.filter(task_events_high_scheduling_class.event_type == 2).select("job_id", "task_index").distinct().count()
+
+    if count_evicted_low == 0:
+        print("No task has been evicted from the low scheduling class")
+    else:
+        percentage_job = (count_evicted_low/ total_events_low_scheduling_class) * 100
+        print(f"Percentuale tasks evicted / total low scheduling class tasks: {percentage_job:.2f}%")
+
+
+    if count_evicted_high == 0:
+        print("No task has been evicted from the high scheduling class")
+    else:
+        percentage_job = (count_evicted_high/ total_events_high_scheduling_class) * 100
+        print(f"Percentuale tasks evicted / total high scheduling class tasks: {percentage_job:.2f}%")
     pass
 
 
@@ -422,6 +446,8 @@ def main():
     #analysis_4_jobs_tasks_distribution(job_events, task_events)
     #print("#5 Analysis")
     #analysis_5_killed_evicted_percentage(job_events, task_events)
+
+
     spark.stop()
     
 
