@@ -1,3 +1,4 @@
+from pyspark.sql import SparkSession
 from pyspark import SparkContext, SparkConf
 
 # ============================================================================
@@ -285,19 +286,37 @@ def main():
     Main execution function.
     Execute all analyses and save results.
     """
-    
-    # Define data paths
-    #BASE_PATH = "/path/to/data"  # TODO: Update with actual path
-    
-    # Load data
-    #machine_events = load_machine_events(spark, f"{BASE_PATH}/machine_events.csv")
-    #machine_attributes = load_machine_attributes(spark, f"{BASE_PATH}/machine_attributes.csv")
-    #job_events = load_job_events(spark, f"{BASE_PATH}/job_events.csv")
-    #task_events = load_task_events(spark, f"{BASE_PATH}/task_events.csv")
-    #task_usage = load_task_usage(spark, f"{BASE_PATH}/task_usage.csv")
-    
-    # Run analyses
-    # TODO: Call analysis functions and save results
+
+    BASE_PATH_EDO = "/home/edoardo/Desktop/UNI/LSDMG/proj/data"
+
+    spark = SparkSession.builder \
+        .appName("LSDMG-Analysis") \
+        .master("local[*]") \
+        .getOrCreate()
+
+    sc = spark.sparkContext
+    sc.setLogLevel("ERROR")
+
+    # Spark legge automaticamente file .gz e supporta wildcard / directory
+    # job_events = load_job_events(spark, f"{BASE_PATH_EDO}/job_events/*")
+    # task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+    # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
+    # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
+
+    # sanity checks (evita count() su dataset molto grandi in produzione)
+    # print("job_events rows:", job_events.count())
+    # print("task_events rows:", task_events.count())
+    # print("task_usage rows:", task_usage.count())
+
+    # cache DataFrame se lo usi spesso
+    # task_events.cache()
+    # task_usage.cache()
+
+    # esempio: chiamare analisi implementate
+    # res = analysis_6_eviction_by_scheduling_class(task_events)
+    # res.show(20)
+
+    spark.stop()
     
 
 
