@@ -105,7 +105,7 @@ def load_task_events(spark, path, do_cast=True):
     ]
     df = spark.read.csv(path, header=False, inferSchema=False)
     df = df.toDF(*te_cols)
-    
+
     if do_cast:
         df = df.select(
             F.col("time").cast("long").alias("time"),
@@ -122,9 +122,9 @@ def load_task_events(spark, path, do_cast=True):
             F.col("disk_space_request").cast("float").alias("disk_space_request"),
             F.col("different_machine_restrictions"),
         )
-    
-    #df = df.dropDuplicates()
-    
+
+    # df = df.dropDuplicates()
+
     return df
 
 
@@ -180,11 +180,17 @@ def load_task_usage(spark, path, do_cast=True):
             F.col("total_page_cache").cast("float").alias("total_page_cache"),
             F.col("max_mem_usage").cast("float").alias("max_mem_usage"),
             F.col("io_time").cast("float").alias("io_time"),
-            F.col("local_disk_space_usage").cast("float").alias("local_disk_space_usage"),
+            F.col("local_disk_space_usage")
+            .cast("float")
+            .alias("local_disk_space_usage"),
             F.col("max_CPU_rate").cast("float").alias("max_CPU_rate"),
             F.col("max_io_time").cast("float").alias("max_io_time"),
-            F.col("cycles_per_instruction").cast("float").alias("cycles_per_instruction"),
-            F.col("mem_accesses_per_instruction").cast("float").alias("mem_accesses_per_instruction"),
+            F.col("cycles_per_instruction")
+            .cast("float")
+            .alias("cycles_per_instruction"),
+            F.col("mem_accesses_per_instruction")
+            .cast("float")
+            .alias("mem_accesses_per_instruction"),
             F.col("sample_portion").cast("float").alias("sample_portion"),
             F.col("aggregation_type"),
             F.col("sampled_CPU_usage").cast("float").alias("sampled_CPU_usage"),
@@ -359,16 +365,14 @@ def analysis_5_killed_evicted_percentage(job_events, task_events):
     Returns:
         dict: Percentages for jobs and tasks
     """
-    job_events = job_events.withColumn("job_id", F.col("job_id").cast("long"))
-    task_events = task_events.withColumn("job_id", F.col("job_id").cast("long"))
     # Aggiunta di .distinct() perchè alcuni task evited potrebbero essere ricontati perchè ritornano disponibili e cambiano il loro stato finale in submit
     # nota: aggiungendo .distinct() è stato necessario inserire anche su che parametro deve essere fatta la distizione, quindi è stato inserito anche .select()
-    total_job_events = job_events.select("job_id").distinct().count()
-    total_task_events = task_events.select("job_id", "task_index").distinct().count()
+    total_job_events = job_events.select("job_ID").distinct().count()
+    total_task_events = task_events.select("job_ID", "task_index").distinct().count()
 
     job_events_killed_or_evicted = (
         job_events.filter((job_events.event_type == 5) | (job_events.event_type == 2))
-        .select("job_id")
+        .select("job_ID")
         .distinct()
     )
     count_job = job_events_killed_or_evicted.count()
@@ -376,7 +380,7 @@ def analysis_5_killed_evicted_percentage(job_events, task_events):
         task_events.filter(
             (task_events.event_type == 5) | (task_events.event_type == 2)
         )
-        .select("job_id", "task_index")
+        .select("job_ID", "task_index")
         .distinct()
     )
     count_task = task_events_killed_or_evicted.count()
@@ -405,12 +409,11 @@ def analysis_6_eviction_by_scheduling_class(task_events):
     Returns:
         DataFrame: Eviction probability by scheduling class
     """
-    task_events = task_events.withColumn("job_id", F.col("job_id").cast("long"))
     task_events_low_scheduling_class = task_events.filter(
         task_events.scheduling_class < 3
     )
     total_events_low_scheduling_class = (
-        task_events_low_scheduling_class.select("job_id", "task_index")
+        task_events_low_scheduling_class.select("job_ID", "task_index")
         .distinct()
         .count()
     )
@@ -418,7 +421,7 @@ def analysis_6_eviction_by_scheduling_class(task_events):
         task_events.scheduling_class == 3
     )
     total_events_high_scheduling_class = (
-        task_events_high_scheduling_class.select("job_id", "task_index")
+        task_events_high_scheduling_class.select("job_ID", "task_index")
         .distinct()
         .count()
     )
@@ -427,7 +430,7 @@ def analysis_6_eviction_by_scheduling_class(task_events):
         task_events_low_scheduling_class.filter(
             task_events_low_scheduling_class.event_type == 2
         )
-        .select("job_id", "task_index")
+        .select("job_ID", "task_index")
         .distinct()
         .count()
     )
@@ -435,7 +438,7 @@ def analysis_6_eviction_by_scheduling_class(task_events):
         task_events_high_scheduling_class.filter(
             task_events_high_scheduling_class.event_type == 2
         )
-        .select("job_id", "task_index")
+        .select("job_ID", "task_index")
         .distinct()
         .count()
     )
@@ -468,8 +471,7 @@ def analysis_7_task_locality(task_events):
     Returns:
         DataFrame: Locality analysis results
     """
-    task_events = task_events.withColumn("job_id", F.col("job_id").cast("long"))
-    task_events_same_jobs = task_events.groupBy("job_id").agg(
+    task_events_same_jobs = task_events.groupBy("job_ID").agg(
         F.count(task_events.task_index).alias("total_task_per_job"),
         F.count_distinct(task_events.machine_ID).alias("distinct_machines_per_task"),
     )
@@ -480,6 +482,8 @@ def analysis_7_task_locality(task_events):
             "locality_distribution"
         ),
     )
+
+    print("\n---Locality distribution of tasks--- ")
     locality_distribution.show()
     pass
 
@@ -495,86 +499,80 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     Returns:
         DataFrame: Correlation analysis results
     """
-    
-    task_requests = task_events_df.groupBy(
-        "job_ID", "task_index"
-    ).agg(
+
+    task_requests = task_events_df.groupBy("job_ID", "task_index").agg(
         F.max("CPU_request").alias("max_cpu_request"),
         F.max("memory_request").alias("max_memory_request"),
-        F.max("disk_space_request").alias("max_disk_request")
+        F.max("disk_space_request").alias("max_disk_request"),
     )
-    
-    task_consumption = task_usage_df.groupBy(
-        "job_ID", "task_index"
-    ).agg(
+
+    task_consumption = task_usage_df.groupBy("job_ID", "task_index").agg(
         F.max("max_CPU_rate").alias("max_cpu_consumption"),
         F.max("max_mem_usage").alias("max_memory_consumption"),
-        F.max("local_disk_space_usage").alias("max_disk_consumption")
+        F.max("local_disk_space_usage").alias("max_disk_consumption"),
     )
 
     task_analysis = task_requests.join(
-        task_consumption,
-        on=["job_ID", "task_index"],
-        how="inner"
+        task_consumption, on=["job_ID", "task_index"], how="inner"
     )
-    
+
     print("\n--- CPU Analysis ---")
-    
-    top_cpu_requesters = task_analysis.orderBy(
-        F.desc("max_cpu_request")
-    ).limit(10).select(
-        "job_ID", "task_index", "max_cpu_request", "max_cpu_consumption"
+
+    top_cpu_requesters = (
+        task_analysis.orderBy(F.desc("max_cpu_request"))
+        .limit(10)
+        .select("job_ID", "task_index", "max_cpu_request", "max_cpu_consumption")
     )
-    
+
     print("Top 10 CPU Requesters:")
     top_cpu_requesters.show()
-    
-    top_cpu_consumers = task_analysis.orderBy(
-        F.desc("max_cpu_consumption")
-    ).limit(10).select(
-        "job_ID", "task_index", "max_cpu_request", "max_cpu_consumption"
+
+    top_cpu_consumers = (
+        task_analysis.orderBy(F.desc("max_cpu_consumption"))
+        .limit(10)
+        .select("job_ID", "task_index", "max_cpu_request", "max_cpu_consumption")
     )
-    
+
     print("Top 10 CPU Consumers:")
     top_cpu_consumers.show()
-    
+
     print("\n--- Memory Analysis ---")
-    
-    top_memory_requesters = task_analysis.orderBy(
-        F.desc("max_memory_request")
-    ).limit(10).select(
-        "job_ID", "task_index", "max_memory_request", "max_memory_consumption"
+
+    top_memory_requesters = (
+        task_analysis.orderBy(F.desc("max_memory_request"))
+        .limit(10)
+        .select("job_ID", "task_index", "max_memory_request", "max_memory_consumption")
     )
-    
+
     print("Top 10 Memory Requesters:")
     top_memory_requesters.show()
-    
-    top_memory_consumers = task_analysis.orderBy(
-        F.desc("max_memory_consumption")
-    ).limit(10).select(
-        "job_ID", "task_index", "max_memory_request", "max_memory_consumption"
+
+    top_memory_consumers = (
+        task_analysis.orderBy(F.desc("max_memory_consumption"))
+        .limit(10)
+        .select("job_ID", "task_index", "max_memory_request", "max_memory_consumption")
     )
-    
+
     print("Top 10 Memory Consumers:")
     top_memory_consumers.show()
-    
+
     print("\n--- Disk Analysis ---")
-    
-    top_disk_requesters = task_analysis.orderBy(
-        F.desc("max_disk_request")
-    ).limit(10).select(
-        "job_ID", "task_index", "max_disk_request", "max_disk_consumption"
+
+    top_disk_requesters = (
+        task_analysis.orderBy(F.desc("max_disk_request"))
+        .limit(10)
+        .select("job_ID", "task_index", "max_disk_request", "max_disk_consumption")
     )
-    
+
     print("Top 10 Disk Requesters:")
     top_disk_requesters.show()
-    
-    top_disk_consumers = task_analysis.orderBy(
-        F.desc("max_disk_consumption")
-    ).limit(10).select(
-        "job_ID", "task_index", "max_disk_request", "max_disk_consumption"
+
+    top_disk_consumers = (
+        task_analysis.orderBy(F.desc("max_disk_consumption"))
+        .limit(10)
+        .select("job_ID", "task_index", "max_disk_request", "max_disk_consumption")
     )
-    
+
     print("Top 10 Disk Consumers:")
     top_disk_consumers.show()
 
@@ -582,7 +580,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
 
 
 def analysis_9_consumption_peaks_vs_eviction(
-    machine_events_df, task_events_df, task_usage_df
+    machine_events, task_events, task_usage
 ):
     """
     Q9: Correlation between resource consumption peaks and task evictions.
@@ -592,10 +590,38 @@ def analysis_9_consumption_peaks_vs_eviction(
         task_events_df: Task events DataFrame
         task_usage_df: Task usage DataFrame
 
+    Note: 
+    - in the task_usage table, the datas about resources are not normalized, (es: 2 means 2 core used). 
+      While, for the task_events e machine_events datas about resources are normalized between 0 and 1 
+    - in task_usage i dati sono aggreagati ogni 5 minuti
+
     Returns:
         DataFrame: Correlation results
     """
-    # TODO: Implement analysis
+    evicted_tasks = task_events.filter(F.col("event_type") == 2) \
+                               .withColumn("window_time", (F.col("time") / 300000000).cast("long") * 300000000) \
+                               .select("machine_ID", "window_time") \
+                               .distinct() \
+                               .withColumn("has_eviction", F.lit(1))
+
+    machine_peaks = task_usage.groupBy("machine_ID", "start_time") \
+                               .agg( F.sum("max_CPU_rate").alias("total_cpu_consumption"), \
+                                     F.max("max_mem_usage").alias("total_memory_consumption"), \
+                                     F.max("local_disk_space_usage").alias("total_disk_consumption")) \
+                               .repartition(100, "machine_ID")
+    
+
+    correlation_evicted_and_peaks = machine_peaks.join(
+            evicted_tasks, \
+            (machine_peaks.machine_ID == evicted_tasks.machine_ID) & (machine_peaks.start_time == evicted_tasks.window_time), \
+            "left").fillna(0, subset=["has_eviction"]) \
+            .persist()
+
+    cpu_correlation = correlation_evicted_and_peaks.stat.corr("total_cpu_consumption", "has_eviction")
+    mem_correlation = correlation_evicted_and_peaks.stat.corr("total_memory_consumption", "has_eviction")
+
+    print(f"Correlation between peaks of high cpu consuption on some machines and task eviction events: {cpu_correlation}") 
+    print(f"Correlation between peaks of high memory consuption on some machines and task eviction events: {mem_correlation}")
     pass
 
 
@@ -663,40 +689,49 @@ def main():
     BASE_PATH_GIU = "/home/giuse_02/Documents/Sparks/ProjectSparks/data"
 
     spark = (
-        SparkSession.builder.appName("LSDMG-Analysis").master("local[*]").getOrCreate()
+        SparkSession.builder
+        .appName("LSDMG-Analysis")
+        .master("local[4]")  # Limita a 4 core invece di *
+        .config("spark.driver.memory", "12g")
+        .config("spark.executor.memory", "12g")
+        .config("spark.memory.fraction", "0.8")
+        .config("spark.memory.storageFraction", "0.3")
+        .config("spark.sql.shuffle.partitions", "100")
+        .config("spark.default.parallelism", "100")
+        .config("spark.sql.adaptive.enabled", "true")
+        .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+        .config("spark.driver.maxResultSize", "4g")
+        .getOrCreate()
     )
 
     sc = spark.sparkContext
     sc.setLogLevel("ERROR")
 
-    # Spark legge automaticamente file .gz e supporta wildcard / directory
     """
     job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
+    task_usage = load_task_usage(spark, f"{BASE_PATH_GIU}/task_usage/*")
+    machine_events = load_machine_events(spark, f"{BASE_PATH_GIU}/machine_events/*")
     """
+    
+
     #task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
     #task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
-
-    # machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
+    #machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
-
-    # sanity checks (evita count() su dataset molto grandi in produzione)
-    # print("job_events rows:", job_events.count())
-    # print("task_events rows:", task_events.count())
-    # print("task_usage rows:", task_usage.count())
 
     # cache DataFrame se lo usi spesso
     # task_events.cache()
     # task_usage.cache()
 
-    # esempio: chiamare analisi implementate
-    # analysis_1_cpu_distribution(machine_events)
-    # analysis_2_maintenance_loss(machine_events)
-    # analysis_3_maintenance_by_class(machine_events)
-    #analysis_8_resource_request_vs_consumption(task_events, task_usage)
-
     """
-     print("#4 Analysis")
+    print("#1 Analysis")
+    analysis_1_cpu_distribution(machine_events)
+    print("#2 Analysis")
+    analysis_2_maintenance_loss(machine_events)
+    print("#3 Analysis")
+    analysis_3_maintenance_by_class(machine_events)
+    print("#4 Analysis")
     analysis_4_jobs_tasks_distribution(job_events, task_events)
     print("#5 Analysis")
     analysis_5_killed_evicted_percentage(job_events, task_events)
@@ -704,8 +739,11 @@ def main():
     analysis_6_eviction_by_scheduling_class(task_events)
     print("#7 Analysis")
     analysis_7_task_locality(task_events)
+    print("#8 Analysis")
+    analysis_8_resource_request_vs_consumption(task_events, task_usage)
+    print("#9 analysis")
+    analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage)
     """
-
     spark.stop()
 
 
