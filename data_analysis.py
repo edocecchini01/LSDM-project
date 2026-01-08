@@ -19,13 +19,13 @@ def load_machine_events(spark, path, do_cast=True):
     Returns:
         DataFrame: Machine events data
     """
-    me_cols = ["time", "machine_id", "event_type", "platform_id", "cpus", "memory"]
+    me_cols = ["time", "machine_ID", "event_type", "platform_id", "cpus", "memory"]
     df = spark.read.csv(path, header=False, inferSchema=False).toDF(*me_cols)
 
     if do_cast:
         df = df.select(
             F.col("time").cast("long").alias("time"),
-            F.col("machine_id").cast("long").alias("machine_id"),
+            F.col("machine_ID").cast("long").alias("machine_ID"),
             F.col("event_type").cast("int").alias("event_type"),
             F.col("platform_id"),
             F.col("cpus").cast("float").alias("cpus"),
@@ -123,7 +123,7 @@ def load_task_events(spark, path, do_cast=True):
             F.col("different_machine_restrictions"),
         )
     
-    #df = df.dropDuplicates()
+    df = df.dropDuplicates()
     
     return df
 
@@ -209,11 +209,6 @@ def load_schema(spark, path):
     return spark.read.csv(path, header=True, inferSchema=True)
 
 
-# ============================================================================
-# ANALYSIS FUNCTIONS - MACHINES
-# ============================================================================
-
-
 def analysis_1_cpu_distribution(machine_events_df):
     """
     Q1: What is the distribution of machines according to their CPU capacity?
@@ -240,7 +235,7 @@ def analysis_2_maintenance_loss(machine_events_df):
         float: Percentage of computational power lost
     """
 
-    w = Window.partitionBy("machine_id").orderBy("time")
+    w = Window.partitionBy("machine_ID").orderBy("time")
 
     df = (
         machine_events_df.withColumn("prev_event", F.lag("event_type", 1).over(w))
@@ -271,7 +266,7 @@ def analysis_2_maintenance_loss(machine_events_df):
 
     max_t = machine_events_df.agg(F.max("time")).first()[0]
 
-    first_appearance = machine_events_df.groupBy("machine_id").agg(
+    first_appearance = machine_events_df.groupBy("machine_ID").agg(
         F.min("time").alias("first_time"), F.first("cpus").alias("cpus")
     )
 
@@ -304,7 +299,7 @@ def analysis_3_maintenance_by_class(machine_events_df):
         DataFrame: Maintenance rate by machine class
     """
 
-    w = Window.partitionBy("machine_id").orderBy("time")
+    w = Window.partitionBy("machine_ID").orderBy("time")
     df = machine_events_df.withColumn("prev_event", F.lag("event_type", 1).over(w))
 
     df = (
@@ -315,7 +310,7 @@ def analysis_3_maintenance_by_class(machine_events_df):
                     (F.col("event_type") == 1) & (F.col("prev_event") == 0), 1
                 ).otherwise(0)
             ).alias("num_down"),
-            F.countDistinct("machine_id").alias("num_machines"),
+            F.countDistinct("machine_ID").alias("num_machines"),
         )
         .withColumn("maintenance_rate", F.col("num_down") / F.col("num_machines"))
     )
@@ -323,12 +318,6 @@ def analysis_3_maintenance_by_class(machine_events_df):
     df.show()
 
     pass
-
-
-# ============================================================================
-# ANALYSIS FUNCTIONS - JOBS AND TASKS
-# ============================================================================
-
 
 def analysis_4_jobs_tasks_distribution(job_events, task_events):
     """
@@ -600,7 +589,7 @@ def analysis_9_consumption_peaks_vs_eviction(
 
 
 def analysis_10_overcommitment_frequency(
-    machine_events_df, task_events_df, task_usage_df
+    machine_events_df, task_events_df
 ):
     """
     Q10: How often are machine resources over-committed?
@@ -613,7 +602,71 @@ def analysis_10_overcommitment_frequency(
     Returns:
         DataFrame: Overcommitment frequency results
     """
-    # TODO: Implement analysis
+
+    task_win = Window.partitionBy("job_ID", "task_index").orderBy("time")
+
+    machine_win = Window.partitionBy("machine_ID").orderBy("time") \
+                        .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+    
+    global_machine_win = Window.partitionBy("machine_ID")
+
+    df_deltas = task_events_df.withColumn("prev_cpu_req", F.lag("CPU_request").over(task_win)) \
+                              .withColumn("prev_mem_req", F.lag("memory_request").over(task_win))
+
+    df_deltas = df_deltas.withColumn(
+        "delta_cpu",
+        F.when(F.col("event_type") == 1, F.col("CPU_request"))
+         .when(F.col("event_type") == 8, F.col("CPU_request") - F.col("prev_cpu_req"))
+         .when(F.col("event_type").isin(2, 3, 4, 5, 6), -F.col("CPU_request"))
+         .otherwise(0.0)
+    ).withColumn(
+        "delta_mem",
+        F.when(F.col("event_type") == 1, F.col("memory_request"))
+         .when(F.col("event_type") == 8, F.col("memory_request") - F.col("prev_mem_req"))
+         .when(F.col("event_type").isin(2, 3, 4, 5, 6), -F.col("memory_request"))
+         .otherwise(0.0)
+    )
+
+    df_raw = df_deltas.withColumn("raw_cpu", F.sum("delta_cpu").over(machine_win)) \
+                      .withColumn("raw_mem", F.sum("delta_mem").over(machine_win))
+
+    df_load = df_raw.withColumn("min_cpu", F.min("raw_cpu").over(global_machine_win)) \
+                    .withColumn("min_mem", F.min("raw_mem").over(global_machine_win)) \
+                    .withColumn("total_cpu_req", F.col("raw_cpu") - F.col("min_cpu")) \
+                    .withColumn("total_mem_req", F.col("raw_mem") - F.col("min_mem"))
+
+    m_events = machine_events_df.select(
+        F.col("time").alias("m_time"),
+        F.col("machine_ID"),
+        F.col("cpus").alias("m_cpus"),
+        F.col("memory").alias("m_mem")
+    )
+
+    df_joined = df_load.join(m_events, "machine_ID").filter(F.col("time") >= F.col("m_time"))
+
+    join_win = Window.partitionBy("machine_ID", "time", "job_ID", "task_index") \
+                     .orderBy(F.col("m_time").desc())
+
+    df_with_cap = df_joined.withColumn("rank", F.row_number().over(join_win)) \
+                           .filter(F.col("rank") == 1) \
+                           .drop("rank", "m_time")
+
+    df_over = df_with_cap.withColumn(
+        "is_over_cpu", F.when(F.col("total_cpu_req") > F.col("m_cpus"), 1).otherwise(0)
+    ).withColumn(
+        "is_over_mem", F.when(F.col("total_mem_req") > F.col("m_mem"), 1).otherwise(0)
+    ).withColumn(
+        "is_over_gen", F.when((F.col("is_over_cpu") == 1) | (F.col("is_over_mem") == 1), 1).otherwise(0)
+    )
+
+    result = df_over.select(
+        (F.mean("is_over_cpu") * 100).alias("percentage_over_cpu"),
+        (F.mean("is_over_mem") * 100).alias("percentage_over_mem"),
+        (F.mean("is_over_gen") * 100).alias("percentage_over_general")
+    )
+
+    result.show()
+
     pass
 
 
@@ -677,7 +730,7 @@ def main():
     #task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
     #task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
 
-    # machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
+    #machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
 
     # sanity checks (evita count() su dataset molto grandi in produzione)
@@ -694,6 +747,7 @@ def main():
     # analysis_2_maintenance_loss(machine_events)
     # analysis_3_maintenance_by_class(machine_events)
     #analysis_8_resource_request_vs_consumption(task_events, task_usage)
+    #analysis_10_overcommitment_frequency(machine_events, task_events)
 
     """
      print("#4 Analysis")
