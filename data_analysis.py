@@ -62,7 +62,7 @@ def load_job_events(spark, path):
     Returns:
         DataFrame: Job events data
     """
-    me_cols = [
+    je_cols = [
         "time",
         "missing_info",
         "job_ID",
@@ -73,21 +73,22 @@ def load_job_events(spark, path):
         "logical_job_name",
     ]
     df = spark.read.csv(path, header=False, inferSchema=False)
-    return df.toDF(*me_cols)
+    return df.toDF(*je_cols)
 
 
-def load_task_events(spark, path):
+def load_task_events(spark, path, do_cast=True):
     """
     Load task events data.
 
     Args:
         spark: SparkSession object
         path: Path to task events CSV file
+        do_cast: cast columns to expected types (default True)
 
     Returns:
         DataFrame: Task events data
     """
-    me_cols = [
+    te_cols = [
         "time",
         "missing_info",
         "job_ID",
@@ -103,21 +104,95 @@ def load_task_events(spark, path):
         "different_machine_restrictions",
     ]
     df = spark.read.csv(path, header=False, inferSchema=False)
-    return df.toDF(*me_cols)
+    df = df.toDF(*te_cols)
+    
+    if do_cast:
+        df = df.select(
+            F.col("time").cast("long").alias("time"),
+            F.col("missing_info").cast("int").alias("missing_info"),
+            F.col("job_ID").cast("long").alias("job_ID"),
+            F.col("task_index").cast("long").alias("task_index"),
+            F.col("machine_ID").cast("long").alias("machine_ID"),
+            F.col("event_type").cast("int").alias("event_type"),
+            F.col("user"),
+            F.col("scheduling_class").cast("int").alias("scheduling_class"),
+            F.col("priority").cast("int").alias("priority"),
+            F.col("CPU_request").cast("float").alias("CPU_request"),
+            F.col("memory_request").cast("float").alias("memory_request"),
+            F.col("disk_space_request").cast("float").alias("disk_space_request"),
+            F.col("different_machine_restrictions"),
+        )
+    
+    #df = df.dropDuplicates()
+    
+    return df
 
 
-def load_task_usage(spark, path):
+def load_task_usage(spark, path, do_cast=True):
     """
     Load task usage data.
 
     Args:
         spark: SparkSession object
         path: Path to task usage CSV file
+        do_cast: cast columns to expected types (default True)
 
     Returns:
         DataFrame: Task usage data
     """
-    return spark.read.csv(path, header=True, inferSchema=True)
+
+    tu_cols = [
+        "start_time",
+        "end_time",
+        "job_ID",
+        "task_index",
+        "machine_ID",
+        "CPU_rate",
+        "canonical_mem_usage",
+        "assigned_mem_usage",
+        "unmap_page_cache",
+        "total_page_cache",
+        "max_mem_usage",
+        "io_time",
+        "local_disk_space_usage",
+        "max_CPU_rate",
+        "max_io_time",
+        "cycles_per_instruction",
+        "mem_accesses_per_instruction",
+        "sample_portion",
+        "aggregation_type",
+        "sampled_CPU_usage",
+    ]
+
+    df = spark.read.csv(path, header=False, inferSchema=False).toDF(*tu_cols)
+
+    if do_cast:
+        df = df.select(
+            F.col("start_time").cast("long").alias("start_time"),
+            F.col("end_time").cast("long").alias("end_time"),
+            F.col("job_ID").cast("long").alias("job_ID"),
+            F.col("task_index").cast("long").alias("task_index"),
+            F.col("machine_ID").cast("long").alias("machine_ID"),
+            F.col("CPU_rate").cast("float").alias("CPU_rate"),
+            F.col("canonical_mem_usage").cast("float").alias("canonical_mem_usage"),
+            F.col("assigned_mem_usage").cast("float").alias("assigned_mem_usage"),
+            F.col("unmap_page_cache").cast("float").alias("unmap_page_cache"),
+            F.col("total_page_cache").cast("float").alias("total_page_cache"),
+            F.col("max_mem_usage").cast("float").alias("max_mem_usage"),
+            F.col("io_time").cast("float").alias("io_time"),
+            F.col("local_disk_space_usage").cast("float").alias("local_disk_space_usage"),
+            F.col("max_CPU_rate").cast("float").alias("max_CPU_rate"),
+            F.col("max_io_time").cast("float").alias("max_io_time"),
+            F.col("cycles_per_instruction").cast("float").alias("cycles_per_instruction"),
+            F.col("mem_accesses_per_instruction").cast("float").alias("mem_accesses_per_instruction"),
+            F.col("sample_portion").cast("float").alias("sample_portion"),
+            F.col("aggregation_type"),
+            F.col("sampled_CPU_usage").cast("float").alias("sampled_CPU_usage"),
+        )
+
+    df = df.dropDuplicates()
+
+    return df
 
 
 def load_schema(spark, path):
@@ -409,11 +484,6 @@ def analysis_7_task_locality(task_events):
     pass
 
 
-# ============================================================================
-# ANALYSIS FUNCTIONS - RESOURCE USAGE
-# ============================================================================
-
-
 def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     """
     Q8: Do tasks requesting more resources consume more resources?
@@ -425,7 +495,89 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     Returns:
         DataFrame: Correlation analysis results
     """
-    # TODO: Implement analysis
+    
+    task_requests = task_events_df.groupBy(
+        "job_ID", "task_index"
+    ).agg(
+        F.max("CPU_request").alias("max_cpu_request"),
+        F.max("memory_request").alias("max_memory_request"),
+        F.max("disk_space_request").alias("max_disk_request")
+    )
+    
+    task_consumption = task_usage_df.groupBy(
+        "job_ID", "task_index"
+    ).agg(
+        F.max("max_CPU_rate").alias("max_cpu_consumption"),
+        F.max("max_mem_usage").alias("max_memory_consumption"),
+        F.max("local_disk_space_usage").alias("max_disk_consumption")
+    )
+
+    task_analysis = task_requests.join(
+        task_consumption,
+        on=["job_ID", "task_index"],
+        how="inner"
+    )
+    
+    print("\n--- CPU Analysis ---")
+    
+    top_cpu_requesters = task_analysis.orderBy(
+        F.desc("max_cpu_request")
+    ).limit(10).select(
+        "job_ID", "task_index", "max_cpu_request", "max_cpu_consumption"
+    )
+    
+    print("Top 10 CPU Requesters:")
+    top_cpu_requesters.show()
+    
+    top_cpu_consumers = task_analysis.orderBy(
+        F.desc("max_cpu_consumption")
+    ).limit(10).select(
+        "job_ID", "task_index", "max_cpu_request", "max_cpu_consumption"
+    )
+    
+    print("Top 10 CPU Consumers:")
+    top_cpu_consumers.show()
+    
+    print("\n--- Memory Analysis ---")
+    
+    top_memory_requesters = task_analysis.orderBy(
+        F.desc("max_memory_request")
+    ).limit(10).select(
+        "job_ID", "task_index", "max_memory_request", "max_memory_consumption"
+    )
+    
+    print("Top 10 Memory Requesters:")
+    top_memory_requesters.show()
+    
+    top_memory_consumers = task_analysis.orderBy(
+        F.desc("max_memory_consumption")
+    ).limit(10).select(
+        "job_ID", "task_index", "max_memory_request", "max_memory_consumption"
+    )
+    
+    print("Top 10 Memory Consumers:")
+    top_memory_consumers.show()
+    
+    print("\n--- Disk Analysis ---")
+    
+    top_disk_requesters = task_analysis.orderBy(
+        F.desc("max_disk_request")
+    ).limit(10).select(
+        "job_ID", "task_index", "max_disk_request", "max_disk_consumption"
+    )
+    
+    print("Top 10 Disk Requesters:")
+    top_disk_requesters.show()
+    
+    top_disk_consumers = task_analysis.orderBy(
+        F.desc("max_disk_consumption")
+    ).limit(10).select(
+        "job_ID", "task_index", "max_disk_request", "max_disk_consumption"
+    )
+    
+    print("Top 10 Disk Consumers:")
+    top_disk_consumers.show()
+
     pass
 
 
@@ -522,8 +674,8 @@ def main():
     job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     """
-
-    # task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
+    #task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+    #task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
 
     # machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
@@ -541,6 +693,7 @@ def main():
     # analysis_1_cpu_distribution(machine_events)
     # analysis_2_maintenance_loss(machine_events)
     # analysis_3_maintenance_by_class(machine_events)
+    #analysis_8_resource_request_vs_consumption(task_events, task_usage)
 
     """
      print("#4 Analysis")
