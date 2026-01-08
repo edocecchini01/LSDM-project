@@ -229,7 +229,6 @@ def analysis_1_cpu_distribution(machine_events_df):
     pass
 
 
-# not take in account the change of the machine (event_type = 2)
 def analysis_2_maintenance_loss(machine_events_df):
     """
     Q2: What is the percentage of computational power lost due to maintenance?
@@ -733,11 +732,7 @@ def analysis_12_original_question_2():
 
 
 def main():
-    """
-    Main execution function.
-    Execute all analyses and save results.
-    """
-
+    
     BASE_PATH_EDO = "/home/edoardo/Desktop/UNI/LSDMG/proj/data"
     BASE_PATH_GIU = "/home/giuse_02/Documents/Sparks/ProjectSparks/data"
 
@@ -765,28 +760,21 @@ def main():
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_GIU}/task_usage/*")
     machine_events = load_machine_events(spark, f"{BASE_PATH_GIU}/machine_events/*")
+    schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
+    """
+    
+    
+    """
+    task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+    task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
+    machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
+    schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
     """
     
 
-    #task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
-    #task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
+    task_events.cache()
+    task_usage.cache()
 
-    #machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
-    # schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
-
-    # cache DataFrame se lo usi spesso
-    # task_events.cache()
-    # task_usage.cache()
-
-    # esempio: chiamare analisi implementate
-    # analysis_1_cpu_distribution(machine_events)
-    # analysis_2_maintenance_loss(machine_events)
-    # analysis_3_maintenance_by_class(machine_events)
-    #analysis_8_resource_request_vs_consumption(task_events, task_usage)
-    #analysis_10_overcommitment_frequency(machine_events, task_events)
-
-    """
-     print("#4 Analysis")
     """
     print("#1 Analysis")
     analysis_1_cpu_distribution(machine_events)
@@ -806,7 +794,11 @@ def main():
     analysis_8_resource_request_vs_consumption(task_events, task_usage)
     print("#9 analysis")
     analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage)
+    print("#10 analysis")
+    analysis_10_overcommitment_frequency(machine_events, task_events)
     """
+    
+
     spark.stop()
 
 
