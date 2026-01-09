@@ -713,16 +713,129 @@ def analysis_11_original_question_1():
     pass
 
 
-def analysis_12_original_question_2():
+def analysis_12_task_reschedule_and_priority_influence(task_events):
     """
-    Q12: Your original question 2.
-
-    Motivation: [Explain the originality and relevance]
-
+    Q12: What proportion of tasks complete successfully on their first scheduling attempt 
+    versus requiring multiple reschedule cycles? Does task priority significantly influence reschedule rates?
+    
+    Motivation: Understanding reschedule patterns reveals scheduler efficiency and infrastructure stability.
+    While the professor's questions examine eviction rates by scheduling class (Q6), this analysis focuses
+    on priority's impact on overall reschedule success - a distinct metric that measures placement quality
+    rather than just eviction probability. Priority directly influences scheduler decisions, making it a
+    key factor in task stability. Additionally, identifying extreme reschedule cases helps pinpoint
+    systemic issues or pathological workloads.
+    
     Returns:
-        DataFrame: Analysis results
+        DataFrame: Analysis results with reschedule distributions
     """
-    # TODO: Implement original analysis
+    
+    task_events_clean = task_events.filter(F.col("time") > 0)
+    
+    tasks_with_lost = task_events_clean.filter(F.col("event_type") == 6) \
+        .select("job_ID", "task_index").distinct()
+    
+    task_events_clean = task_events_clean.join(
+        tasks_with_lost,
+        on=["job_ID", "task_index"],
+        how="left_anti"
+    )
+    
+    schedule_counts = task_events_clean.filter(F.col("event_type") == 1) \
+        .groupBy("job_ID", "task_index") \
+        .agg(
+            F.count("*").alias("schedule_count"),
+            F.first("priority").alias("priority"),
+            F.first("scheduling_class").alias("scheduling_class")
+        )
+    
+    terminal_events = task_events_clean.filter(
+        F.col("event_type").isin([3, 4, 5])
+    )
+    
+    window_last = Window.partitionBy("job_ID", "task_index").orderBy(F.desc("time"))
+    
+    final_outcomes = terminal_events.withColumn("rn", F.row_number().over(window_last)) \
+        .filter(F.col("rn") == 1) \
+        .select("job_ID", "task_index", F.col("event_type").alias("final_event_type"))
+    
+    task_analysis = schedule_counts.join(
+        final_outcomes,
+        on=["job_ID", "task_index"],
+        how="inner"
+    )
+    
+    task_analysis = task_analysis.withColumn(
+        "final_outcome",
+        F.when(F.col("final_event_type") == 3, "FAIL")
+        .when(F.col("final_event_type") == 4, "FINISH")
+        .when(F.col("final_event_type") == 5, "KILL")
+    )
+    
+    task_analysis.cache()
+    
+    task_analysis = task_analysis.withColumn(
+        "reschedule_category",
+        F.when(F.col("schedule_count") == 1, "first_attempt")
+        .when(F.col("schedule_count") == 2, "1_reschedule")
+        .when(F.col("schedule_count").between(3, 5), "2-4_reschedules")
+        .when(F.col("schedule_count").between(6, 10), "5-10_reschedules")
+        .when(F.col("schedule_count") > 10, "10+_reschedules")
+    )
+    
+    overall_distribution = task_analysis.groupBy("reschedule_category") \
+        .agg(F.count("*").alias("task_count")) \
+        .withColumn(
+            "percentage",
+            F.round(F.col("task_count") * 100.0 / F.sum("task_count").over(Window.partitionBy()), 2)
+        ) \
+        .orderBy("reschedule_category")
+    
+    print("\n=== OVERALL RESCHEDULE DISTRIBUTION ===")
+    overall_distribution.show()
+    
+    first_attempt_total = task_analysis.filter(F.col("schedule_count") == 1).count()
+    first_attempt_success = task_analysis.filter(
+        (F.col("schedule_count") == 1) & (F.col("final_event_type") == 4)
+    ).count()
+    
+    print(f"\nFirst attempt tasks: {first_attempt_total}")
+    print(f"First attempt SUCCESS (FINISH): {first_attempt_success} ({first_attempt_success*100.0/first_attempt_total:.2f}%)")
+    
+    task_analysis = task_analysis.withColumn(
+        "priority_group",
+        F.when(F.col("priority") == 0, "free_tier")
+         .when(F.col("priority") == 1, "low_priority")
+         .when(F.col("priority").isin(2, 3, 5), "medium_priority")
+         .when(F.col("priority") == 4, "production_tier")
+         .when(F.col("priority").between(6, 11), "high_priority")
+         .otherwise("unknown")
+    )
+    
+    window_priority = Window.partitionBy("priority_group")
+    
+    priority_reschedule = task_analysis.groupBy("priority_group", "reschedule_category") \
+        .agg(F.count("*").alias("task_count")) \
+        .withColumn(
+            "percentage",
+            F.round(F.col("task_count") * 100.0 / F.sum("task_count").over(window_priority), 2)
+        )
+    
+    print("\n=== RESCHEDULE DISTRIBUTION BY PRIORITY GROUP ===")
+    priority_reschedule.orderBy("priority_group", "reschedule_category").show(50)
+    
+    avg_by_priority = task_analysis.groupBy("priority_group") \
+        .agg(
+            F.avg("schedule_count").alias("avg_reschedules"),
+            F.stddev("schedule_count").alias("stddev_reschedules"),
+            F.min("schedule_count").alias("min_reschedules"),
+            F.max("schedule_count").alias("max_reschedules"),
+            F.count("*").alias("total_tasks")
+        ) \
+        .orderBy("priority_group")
+    
+    print("\n=== AVERAGE RESCHEDULES BY PRIORITY GROUP ===")
+    avg_by_priority.show()
+    
     pass
 
 
@@ -763,17 +876,17 @@ def main():
     schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
     """
     
-    
-    """
     task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+    """
+    
     task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
     """
     
 
-    task_events.cache()
-    task_usage.cache()
+    #task_events.cache()
+    #task_usage.cache()
 
     """
     print("#1 Analysis")
@@ -797,7 +910,7 @@ def main():
     print("#10 analysis")
     analysis_10_overcommitment_frequency(machine_events, task_events)
     """
-    
+    analysis_12_task_reschedule_and_priority_influence(task_events)
 
     spark.stop()
 
