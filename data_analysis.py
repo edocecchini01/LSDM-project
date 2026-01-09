@@ -1053,7 +1053,7 @@ def main():
 
     BASE_PATH_EDO = "/home/edoardo/Desktop/UNI/LSDMG/proj/data"
     BASE_PATH_GIU = "/home/giuse_02/Documents/Sparks/ProjectSparks/data"
-    BASE_PATH_CLOUD = "gs://bucket_lsdm_dsc"
+    BASE_PATH_CLOUD = "gs://bucket_lsdm_dsc/data"
 
     spark = (
         SparkSession.builder.appName("LSDMG-Analysis")
