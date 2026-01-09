@@ -122,9 +122,9 @@ def load_task_events(spark, path, do_cast=True):
             F.col("disk_space_request").cast("float").alias("disk_space_request"),
             F.col("different_machine_restrictions"),
         )
-    
+
     df = df.dropDuplicates()
-    
+
     return df
 
 
@@ -322,8 +322,7 @@ def analysis_3_maintenance_by_class(machine_events_df):
 
     # Group by CPU class and calculate maintenance statistics
     df = (
-        df.groupBy("cpus")
-        .agg(
+        df.groupBy("cpus").agg(
             # Count REMOVE events (1) that follow ADD events (0) - these are maintenance occurrences
             F.sum(
                 F.when(
@@ -340,6 +339,7 @@ def analysis_3_maintenance_by_class(machine_events_df):
     df.show()
 
     pass
+
 
 def analysis_4_jobs_tasks_distribution(job_events, task_events):
     """
@@ -593,9 +593,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     pass
 
 
-def analysis_9_consumption_peaks_vs_eviction(
-    machine_events, task_events, task_usage
-):
+def analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage):
     """
     Q9: Correlation between resource consumption peaks and task evictions.
 
@@ -604,44 +602,60 @@ def analysis_9_consumption_peaks_vs_eviction(
         task_events_df: Task events DataFrame
         task_usage_df: Task usage DataFrame
 
-    Note: 
-    - in the task_usage table, the datas about resources are not normalized, (es: 2 means 2 core used). 
-      While, for the task_events e machine_events datas about resources are normalized between 0 and 1 
+    Note:
+    - in the task_usage table, the datas about resources are not normalized, (es: 2 means 2 core used).
+      While, for the task_events e machine_events datas about resources are normalized between 0 and 1
     - in task_usage i dati sono aggreagati ogni 5 minuti
 
     Returns:
         DataFrame: Correlation results
     """
-    evicted_tasks = task_events.filter(F.col("event_type") == 2) \
-                               .withColumn("window_time", (F.col("time") / 300000000).cast("long") * 300000000) \
-                               .select("machine_ID", "window_time") \
-                               .distinct() \
-                               .withColumn("has_eviction", F.lit(1))
+    evicted_tasks = (
+        task_events.filter(F.col("event_type") == 2)
+        .withColumn("window_time", (F.col("time") / 300000000).cast("long") * 300000000)
+        .select("machine_ID", "window_time")
+        .distinct()
+        .withColumn("has_eviction", F.lit(1))
+    )
 
-    machine_peaks = task_usage.groupBy("machine_ID", "start_time") \
-                               .agg( F.sum("max_CPU_rate").alias("total_cpu_consumption"), \
-                                     F.max("max_mem_usage").alias("total_memory_consumption"), \
-                                     F.max("local_disk_space_usage").alias("total_disk_consumption")) \
-                               .repartition(100, "machine_ID")
-    
+    machine_peaks = (
+        task_usage.groupBy("machine_ID", "start_time")
+        .agg(
+            F.sum("max_CPU_rate").alias("total_cpu_consumption"),
+            F.max("max_mem_usage").alias("total_memory_consumption"),
+            F.max("local_disk_space_usage").alias("total_disk_consumption"),
+        )
+        .repartition(100, "machine_ID")
+    )
 
-    correlation_evicted_and_peaks = machine_peaks.join(
-            evicted_tasks, \
-            (machine_peaks.machine_ID == evicted_tasks.machine_ID) & (machine_peaks.start_time == evicted_tasks.window_time), \
-            "left").fillna(0, subset=["has_eviction"]) \
-            .persist()
+    correlation_evicted_and_peaks = (
+        machine_peaks.join(
+            evicted_tasks,
+            (machine_peaks.machine_ID == evicted_tasks.machine_ID)
+            & (machine_peaks.start_time == evicted_tasks.window_time),
+            "left",
+        )
+        .fillna(0, subset=["has_eviction"])
+        .persist()
+    )
 
-    cpu_correlation = correlation_evicted_and_peaks.stat.corr("total_cpu_consumption", "has_eviction")
-    mem_correlation = correlation_evicted_and_peaks.stat.corr("total_memory_consumption", "has_eviction")
+    cpu_correlation = correlation_evicted_and_peaks.stat.corr(
+        "total_cpu_consumption", "has_eviction"
+    )
+    mem_correlation = correlation_evicted_and_peaks.stat.corr(
+        "total_memory_consumption", "has_eviction"
+    )
 
-    print(f"Correlation between peaks of high cpu consuption on some machines and task eviction events: {cpu_correlation}") 
-    print(f"Correlation between peaks of high memory consuption on some machines and task eviction events: {mem_correlation}")
+    print(
+        f"Correlation between peaks of high cpu consuption on some machines and task eviction events: {cpu_correlation}"
+    )
+    print(
+        f"Correlation between peaks of high memory consuption on some machines and task eviction events: {mem_correlation}"
+    )
     pass
 
 
-def analysis_10_overcommitment_frequency(
-    machine_events_df, task_events_df
-):
+def analysis_10_overcommitment_frequency(machine_events_df, task_events_df):
     """
     Q10: How often are machine resources over-committed?
 
@@ -658,75 +672,96 @@ def analysis_10_overcommitment_frequency(
     task_win = Window.partitionBy("job_ID", "task_index").orderBy("time")
 
     # Create window for cumulative sum of resource deltas per machine over time
-    machine_win = Window.partitionBy("machine_ID").orderBy("time") \
-                        .rowsBetween(Window.unboundedPreceding, Window.currentRow)
-    
+    machine_win = (
+        Window.partitionBy("machine_ID")
+        .orderBy("time")
+        .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+    )
+
     # Create window for global per-machine operations to find minimum values
     global_machine_win = Window.partitionBy("machine_ID")
 
     # Get previous resource requests for each task to calculate deltas on UPDATE events
-    df_deltas = task_events_df.withColumn("prev_cpu_req", F.lag("CPU_request").over(task_win)) \
-                              .withColumn("prev_mem_req", F.lag("memory_request").over(task_win))
+    df_deltas = task_events_df.withColumn(
+        "prev_cpu_req", F.lag("CPU_request").over(task_win)
+    ).withColumn("prev_mem_req", F.lag("memory_request").over(task_win))
 
     # Calculate resource deltas based on event type: +request on SCHEDULE, delta on UPDATE, -request on terminal events
     df_deltas = df_deltas.withColumn(
         "delta_cpu",
         F.when(F.col("event_type") == 1, F.col("CPU_request"))
-         .when(F.col("event_type") == 8, F.col("CPU_request") - F.col("prev_cpu_req"))
-         .when(F.col("event_type").isin(2, 3, 4, 5, 6), -F.col("CPU_request"))
-         .otherwise(0.0)
+        .when(F.col("event_type") == 8, F.col("CPU_request") - F.col("prev_cpu_req"))
+        .when(F.col("event_type").isin(2, 3, 4, 5, 6), -F.col("CPU_request"))
+        .otherwise(0.0),
     ).withColumn(
         "delta_mem",
         F.when(F.col("event_type") == 1, F.col("memory_request"))
-         .when(F.col("event_type") == 8, F.col("memory_request") - F.col("prev_mem_req"))
-         .when(F.col("event_type").isin(2, 3, 4, 5, 6), -F.col("memory_request"))
-         .otherwise(0.0)
+        .when(F.col("event_type") == 8, F.col("memory_request") - F.col("prev_mem_req"))
+        .when(F.col("event_type").isin(2, 3, 4, 5, 6), -F.col("memory_request"))
+        .otherwise(0.0),
     )
 
     # Calculate cumulative resource load per machine over time (raw values may be negative)
-    df_raw = df_deltas.withColumn("raw_cpu", F.sum("delta_cpu").over(machine_win)) \
-                      .withColumn("raw_mem", F.sum("delta_mem").over(machine_win))
+    df_raw = df_deltas.withColumn(
+        "raw_cpu", F.sum("delta_cpu").over(machine_win)
+    ).withColumn("raw_mem", F.sum("delta_mem").over(machine_win))
 
     # Normalize to zero baseline by subtracting minimum value per machine
-    df_load = df_raw.withColumn("min_cpu", F.min("raw_cpu").over(global_machine_win)) \
-                    .withColumn("min_mem", F.min("raw_mem").over(global_machine_win)) \
-                    .withColumn("total_cpu_req", F.col("raw_cpu") - F.col("min_cpu")) \
-                    .withColumn("total_mem_req", F.col("raw_mem") - F.col("min_mem"))
+    df_load = (
+        df_raw.withColumn("min_cpu", F.min("raw_cpu").over(global_machine_win))
+        .withColumn("min_mem", F.min("raw_mem").over(global_machine_win))
+        .withColumn("total_cpu_req", F.col("raw_cpu") - F.col("min_cpu"))
+        .withColumn("total_mem_req", F.col("raw_mem") - F.col("min_mem"))
+    )
 
     # Prepare machine capacity data with renamed columns for joining
     m_events = machine_events_df.select(
         F.col("time").alias("m_time"),
         F.col("machine_ID"),
         F.col("cpus").alias("m_cpus"),
-        F.col("memory").alias("m_mem")
+        F.col("memory").alias("m_mem"),
     )
 
     # Join with machine capacity, keeping only events after machine was added
-    df_joined = df_load.join(m_events, "machine_ID").filter(F.col("time") >= F.col("m_time"))
+    df_joined = df_load.join(m_events, "machine_ID").filter(
+        F.col("time") >= F.col("m_time")
+    )
 
     # Create window to find most recent machine capacity for each task event
-    join_win = Window.partitionBy("machine_ID", "time", "job_ID", "task_index") \
-                     .orderBy(F.col("m_time").desc())
+    join_win = Window.partitionBy("machine_ID", "time", "job_ID", "task_index").orderBy(
+        F.col("m_time").desc()
+    )
 
     # Keep only the most recent machine capacity entry for each task event
-    df_with_cap = df_joined.withColumn("rank", F.row_number().over(join_win)) \
-                           .filter(F.col("rank") == 1) \
-                           .drop("rank", "m_time")
+    df_with_cap = (
+        df_joined.withColumn("rank", F.row_number().over(join_win))
+        .filter(F.col("rank") == 1)
+        .drop("rank", "m_time")
+    )
 
     # Flag overcommitment cases where cumulative load exceeds machine capacity
-    df_over = df_with_cap.withColumn(
-        "is_over_cpu", F.when(F.col("total_cpu_req") > F.col("m_cpus"), 1).otherwise(0)
-    ).withColumn(
-        "is_over_mem", F.when(F.col("total_mem_req") > F.col("m_mem"), 1).otherwise(0)
-    ).withColumn(
-        "is_over_gen", F.when((F.col("is_over_cpu") == 1) | (F.col("is_over_mem") == 1), 1).otherwise(0)
+    df_over = (
+        df_with_cap.withColumn(
+            "is_over_cpu",
+            F.when(F.col("total_cpu_req") > F.col("m_cpus"), 1).otherwise(0),
+        )
+        .withColumn(
+            "is_over_mem",
+            F.when(F.col("total_mem_req") > F.col("m_mem"), 1).otherwise(0),
+        )
+        .withColumn(
+            "is_over_gen",
+            F.when(
+                (F.col("is_over_cpu") == 1) | (F.col("is_over_mem") == 1), 1
+            ).otherwise(0),
+        )
     )
 
     # Calculate percentage of events where resources were overcommitted
     result = df_over.select(
         (F.mean("is_over_cpu") * 100).alias("percentage_over_cpu"),
         (F.mean("is_over_mem") * 100).alias("percentage_over_mem"),
-        (F.mean("is_over_gen") * 100).alias("percentage_over_general")
+        (F.mean("is_over_gen") * 100).alias("percentage_over_general"),
     )
 
     result.show()
@@ -739,89 +774,187 @@ def analysis_10_overcommitment_frequency(
 # ============================================================================
 
 
-def analysis_11_original_question_1():
+def analysis_11_user_task(task_events):
     """
-    Q11: Your original question 1.
-
-    Motivation: [Explain the originality and relevance]
+    Q11: Can repeatedly rescheduled tasks be identified at the user level, and do these
+    rescheduling events occur at consistent time intervals, indicating systematic
+    resource exhaustion rather than random preemption?
 
     Returns:
-        DataFrame: Analysis results
+        DataFrame: Task-level analysis with reschedule patterns
     """
-    # TODO: Implement original analysis
-    pass
+
+    # Filter valid events (remove zero timestamps)
+    task_events_clean = task_events.filter(F.col("time") > 0)
+
+    # Define window for tracking event sequences per task
+    window_spec = Window.partitionBy("user", "job_ID", "task_index").orderBy("time")
+
+    # Track previous event and timestamp to identify SCHEDULE -> EVICT patterns
+    df_history = task_events_clean.withColumn(
+        "prev_event", F.lag("event_type").over(window_spec)
+    ).withColumn("prev_time", F.lag("time").over(window_spec))
+
+    # Identify EVICT (2) events following SCHEDULE (1) events
+    evictions = df_history.filter(
+        (F.col("event_type") == 2) & (F.col("prev_event") == 1)
+    ).withColumn("stability_min", (F.col("time") - F.col("prev_time")) / 60000000)
+
+    # Aggregate by user and task to identify repeatedly rescheduled tasks
+    task_summary = (
+        evictions.groupBy("user", "job_ID", "task_index")
+        .agg(
+            F.count("*").alias("num_reschedules"),
+            F.avg("stability_min").alias("avg_stability_min"),
+            F.stddev("stability_min").alias("stddev_stability_min"),
+            F.min("stability_min").alias("min_stability_min"),
+            F.max("stability_min").alias("max_stability_min"),
+            F.first("priority").alias("priority"),
+        )
+        .filter(F.col("num_reschedules") > 1)
+    )
+
+    # Categorize reschedule patterns based on temporal consistency
+    task_summary = task_summary.withColumn(
+        "pattern",
+        F.when(
+            (F.col("stddev_stability_min") < (F.col("avg_stability_min") * 0.2))
+            | ((F.col("max_stability_min") - F.col("min_stability_min")) < 1.0),
+            "consistent",
+        ).otherwise("variable"),
+    )
+
+    # Cache for reuse in multiple aggregations
+    task_summary.cache()
+
+    print("\n=== TOP 20 TASKS WITH MOST RESCHEDULES ===")
+    task_summary.orderBy(F.desc("num_reschedules")).show(20, truncate=False)
+
+    # User-level aggregation to identify problematic users
+    user_summary = (
+        task_summary.groupBy("user")
+        .agg(
+            F.count("*").alias("problematic_tasks"),
+            F.sum("num_reschedules").alias("total_reschedules"),
+            F.avg("avg_stability_min").alias("avg_uptime_before_eviction_min"),
+        )
+        .orderBy(F.desc("total_reschedules"))
+    )
+
+    print("\n=== TOP 20 USERS WITH RESCHEDULE ISSUES ===")
+    user_summary.show(20, truncate=False)
+
+    # Pattern distribution analysis
+    pattern_dist = (
+        task_summary.groupBy("pattern")
+        .agg(F.count("*").alias("task_count"))
+        .withColumn(
+            "percentage",
+            F.round(
+                F.col("task_count")
+                * 100.0
+                / F.sum("task_count").over(Window.partitionBy()),
+                2,
+            ),
+        )
+    )
+
+    print("\n=== RESCHEDULE PATTERN DISTRIBUTION ===")
+    print("Consistent: Rescheduling at similar intervals → Resource exhaustion likely")
+    print("Variable: Rescheduling at varying intervals → Preemption likely")
+    pattern_dist.show()
+
+    # Summary statistics
+    total_tasks = task_summary.count()
+    consistent_tasks = task_summary.filter(F.col("pattern") == "consistent").count()
+    variable_tasks = task_summary.filter(F.col("pattern") == "variable").count()
+
+    print(f"Total repeatedly rescheduled tasks: {total_tasks}")
+    print(
+        f"  Consistent pattern: {consistent_tasks} ({consistent_tasks*100/total_tasks:.1f}%)"
+    )
+    print(f"    → Systematic resource exhaustion")
+    print(
+        f"  Variable pattern: {variable_tasks} ({variable_tasks*100/total_tasks:.1f}%)"
+    )
+    print(f"    → Random preemption by higher-priority tasks")
+
+    return task_summary.orderBy(F.desc("num_reschedules"))
+
+pass
 
 
 def analysis_12_task_reschedule_and_priority_influence(task_events):
     """
-    Q12: What proportion of tasks complete successfully on their first scheduling attempt 
+    Q12: What proportion of tasks complete successfully on their first scheduling attempt
     versus requiring multiple reschedule cycles? Does task priority significantly influence reschedule rates?
-    
+
     Motivation: Understanding reschedule patterns reveals scheduler efficiency and infrastructure stability.
     While the professor's questions examine eviction rates by scheduling class (Q6), this analysis focuses
     on priority's impact on overall reschedule success - a distinct metric that measures placement quality
     rather than just eviction probability. Priority directly influences scheduler decisions, making it a
     key factor in task stability. Additionally, identifying extreme reschedule cases helps pinpoint
     systemic issues or pathological workloads.
-    
+
     Returns:
         DataFrame: Analysis results with reschedule distributions
     """
-    
+
     # Filter out invalid events with zero timestamp
     task_events_clean = task_events.filter(F.col("time") > 0)
-    
+
     # Identify tasks with LOST events (6) to exclude them from analysis
-    tasks_with_lost = task_events_clean.filter(F.col("event_type") == 6) \
-        .select("job_ID", "task_index").distinct()
-    
+    tasks_with_lost = (
+        task_events_clean.filter(F.col("event_type") == 6)
+        .select("job_ID", "task_index")
+        .distinct()
+    )
+
     # Remove tasks with LOST events using left anti join
     task_events_clean = task_events_clean.join(
-        tasks_with_lost,
-        on=["job_ID", "task_index"],
-        how="left_anti"
+        tasks_with_lost, on=["job_ID", "task_index"], how="left_anti"
     )
-    
+
     # Count SCHEDULE events (1) per task to determine how many times each task was scheduled
-    schedule_counts = task_events_clean.filter(F.col("event_type") == 1) \
-        .groupBy("job_ID", "task_index") \
+    schedule_counts = (
+        task_events_clean.filter(F.col("event_type") == 1)
+        .groupBy("job_ID", "task_index")
         .agg(
             F.count("*").alias("schedule_count"),
             F.first("priority").alias("priority"),
-            F.first("scheduling_class").alias("scheduling_class")
+            F.first("scheduling_class").alias("scheduling_class"),
         )
-    
-    # Filter terminal events: FAIL (3), FINISH (4), KILL (5)
-    terminal_events = task_events_clean.filter(
-        F.col("event_type").isin([3, 4, 5])
     )
-    
+
+    # Filter terminal events: FAIL (3), FINISH (4), KILL (5)
+    terminal_events = task_events_clean.filter(F.col("event_type").isin([3, 4, 5]))
+
     # Create window to find the last terminal event for each task
     window_last = Window.partitionBy("job_ID", "task_index").orderBy(F.desc("time"))
-    
+
     # Get the final outcome (most recent terminal event) for each task
-    final_outcomes = terminal_events.withColumn("rn", F.row_number().over(window_last)) \
-        .filter(F.col("rn") == 1) \
+    final_outcomes = (
+        terminal_events.withColumn("rn", F.row_number().over(window_last))
+        .filter(F.col("rn") == 1)
         .select("job_ID", "task_index", F.col("event_type").alias("final_event_type"))
-    
+    )
+
     # Join schedule counts with final outcomes to analyze reschedule patterns
     task_analysis = schedule_counts.join(
-        final_outcomes,
-        on=["job_ID", "task_index"],
-        how="inner"
+        final_outcomes, on=["job_ID", "task_index"], how="inner"
     )
-    
+
     # Map terminal event types to human-readable outcomes
     task_analysis = task_analysis.withColumn(
         "final_outcome",
         F.when(F.col("final_event_type") == 3, "FAIL")
         .when(F.col("final_event_type") == 4, "FINISH")
-        .when(F.col("final_event_type") == 5, "KILL")
+        .when(F.col("final_event_type") == 5, "KILL"),
     )
-    
+
     # Cache for reuse in multiple aggregations
     task_analysis.cache()
-    
+
     # Categorize tasks by number of reschedule attempts
     task_analysis = task_analysis.withColumn(
         "reschedule_category",
@@ -829,69 +962,85 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
         .when(F.col("schedule_count") == 2, "1_reschedule")
         .when(F.col("schedule_count").between(3, 5), "2-4_reschedules")
         .when(F.col("schedule_count").between(6, 10), "5-10_reschedules")
-        .when(F.col("schedule_count") > 10, "10+_reschedules")
+        .when(F.col("schedule_count") > 10, "10+_reschedules"),
     )
-    
+
     # Calculate overall distribution of tasks by reschedule category
-    overall_distribution = task_analysis.groupBy("reschedule_category") \
-        .agg(F.count("*").alias("task_count")) \
+    overall_distribution = (
+        task_analysis.groupBy("reschedule_category")
+        .agg(F.count("*").alias("task_count"))
         .withColumn(
             "percentage",
-            F.round(F.col("task_count") * 100.0 / F.sum("task_count").over(Window.partitionBy()), 2)
-        ) \
+            F.round(
+                F.col("task_count")
+                * 100.0
+                / F.sum("task_count").over(Window.partitionBy()),
+                2,
+            ),
+        )
         .orderBy("reschedule_category")
-    
+    )
+
     print("\n=== OVERALL RESCHEDULE DISTRIBUTION ===")
     overall_distribution.show()
-    
+
     # Calculate first-attempt success rate (tasks that finished without reschedule)
     first_attempt_total = task_analysis.filter(F.col("schedule_count") == 1).count()
     first_attempt_success = task_analysis.filter(
         (F.col("schedule_count") == 1) & (F.col("final_event_type") == 4)
     ).count()
-    
+
     print(f"\nFirst attempt tasks: {first_attempt_total}")
-    print(f"First attempt SUCCESS (FINISH): {first_attempt_success} ({first_attempt_success*100.0/first_attempt_total:.2f}%)")
-    
+    print(
+        f"First attempt SUCCESS (FINISH): {first_attempt_success} ({first_attempt_success*100.0/first_attempt_total:.2f}%)"
+    )
+
     # Group tasks by priority tier for comparative analysis
     task_analysis = task_analysis.withColumn(
         "priority_group",
         F.when(F.col("priority") == 0, "free_tier")
-         .when(F.col("priority") == 1, "low_priority")
-         .when(F.col("priority").isin(2, 3, 5), "medium_priority")
-         .when(F.col("priority") == 4, "production_tier")
-         .when(F.col("priority").between(6, 11), "high_priority")
-         .otherwise("unknown")
+        .when(F.col("priority") == 1, "low_priority")
+        .when(F.col("priority").isin(2, 3, 5), "medium_priority")
+        .when(F.col("priority") == 4, "production_tier")
+        .when(F.col("priority").between(6, 11), "high_priority")
+        .otherwise("unknown"),
     )
-    
+
     # Create window for per-priority-group percentage calculations
     window_priority = Window.partitionBy("priority_group")
-    
+
     # Calculate reschedule distribution within each priority group
-    priority_reschedule = task_analysis.groupBy("priority_group", "reschedule_category") \
-        .agg(F.count("*").alias("task_count")) \
+    priority_reschedule = (
+        task_analysis.groupBy("priority_group", "reschedule_category")
+        .agg(F.count("*").alias("task_count"))
         .withColumn(
             "percentage",
-            F.round(F.col("task_count") * 100.0 / F.sum("task_count").over(window_priority), 2)
+            F.round(
+                F.col("task_count") * 100.0 / F.sum("task_count").over(window_priority),
+                2,
+            ),
         )
-    
+    )
+
     print("\n=== RESCHEDULE DISTRIBUTION BY PRIORITY GROUP ===")
     priority_reschedule.orderBy("priority_group", "reschedule_category").show(50)
-    
+
     # Calculate average reschedule statistics per priority group
-    avg_by_priority = task_analysis.groupBy("priority_group") \
+    avg_by_priority = (
+        task_analysis.groupBy("priority_group")
         .agg(
             F.avg("schedule_count").alias("avg_reschedules"),
             F.stddev("schedule_count").alias("stddev_reschedules"),
             F.min("schedule_count").alias("min_reschedules"),
             F.max("schedule_count").alias("max_reschedules"),
-            F.count("*").alias("total_tasks")
-        ) \
+            F.count("*").alias("total_tasks"),
+        )
         .orderBy("priority_group")
-    
+    )
+
     print("\n=== AVERAGE RESCHEDULES BY PRIORITY GROUP ===")
     avg_by_priority.show()
-    
+
     pass
 
 
@@ -901,14 +1050,13 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
 
 
 def main():
-    
+
     BASE_PATH_EDO = "/home/edoardo/Desktop/UNI/LSDMG/proj/data"
     BASE_PATH_GIU = "/home/giuse_02/Documents/Sparks/ProjectSparks/data"
 
     spark = (
-        SparkSession.builder
-        .appName("LSDMG-Analysis")
-        .master("local[4]")  # Limita a 4 core invece di *
+        SparkSession.builder.appName("LSDMG-Analysis")
+        .master("local[4]")
         .config("spark.driver.memory", "12g")
         .config("spark.executor.memory", "12g")
         .config("spark.memory.fraction", "0.8")
@@ -924,26 +1072,20 @@ def main():
     sc = spark.sparkContext
     sc.setLogLevel("ERROR")
 
-    """
     job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_GIU}/task_usage/*")
+    schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
+
+    """
     machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
-    schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
-    """
-
-    """
-    
-    
-    machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
     """
-    
 
-    #task_events.cache()
-    #task_usage.cache()
+    task_events.cache()
+    task_usage.cache()
 
     """
     print("#1 Analysis")
@@ -966,8 +1108,11 @@ def main():
     analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage)
     print("#10 analysis")
     analysis_10_overcommitment_frequency(machine_events, task_events)
+    print("#12 analysis")
     analysis_12_task_reschedule_and_priority_influence(task_events)
     """
+    print("#11_analysis")
+    analysis_11_user_task(task_events)
 
     spark.stop()
 
