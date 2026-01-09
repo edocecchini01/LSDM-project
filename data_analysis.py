@@ -225,6 +225,7 @@ def analysis_1_cpu_distribution(machine_events_df):
     Returns:
         DataFrame: CPU capacity distribution results
     """
+    # Group machines by CPU capacity and count how many machines have each CPU value
     machine_events_df.groupBy(["cpus"]).count().show()
     pass
 
@@ -239,29 +240,34 @@ def analysis_2_maintenance_loss(machine_events_df):
     Returns:
         float: Percentage of computational power lost
     """
-
+    # Create window for per-machine operations ordered by time
     w = Window.partitionBy("machine_ID").orderBy("time")
 
+    # Get previous event information using lag to find REMOVE->ADD transitions
     df = (
         machine_events_df.withColumn("prev_event", F.lag("event_type", 1).over(w))
         .withColumn("prev_time", F.lag("time", 1).over(w))
         .withColumn("prev_cpus", F.lag("cpus", 1).over(w))
     )
 
+    # Use previous CPU value, or current if previous is null
     df1 = df.withColumn(
         "effective_prev_cpus", F.coalesce(F.col("prev_cpus"), F.col("cpus"))
     )
 
+    # Find ADD events (0) that follow REMOVE events (1) - these are maintenance intervals
     adds_after_remove = df1.filter(
         (F.col("event_type") == 0)
         & (F.col("prev_event") == 1)
         & (F.col("prev_time").isNotNull())
     )
 
+    # Calculate downtime and CPU loss for each maintenance interval
     adds_with_loss = adds_after_remove.withColumn(
         "downtime", F.col("time") - F.col("prev_time")
     ).withColumn("cpu_loss", F.col("downtime") * F.col("effective_prev_cpus"))
 
+    # Sum total CPU-time lost across all maintenance intervals
     total_cpu_lost = (
         adds_with_loss.agg(F.sum("cpu_loss").alias("total_cpu_lost")).collect()[0][
             "total_cpu_lost"
@@ -269,16 +275,20 @@ def analysis_2_maintenance_loss(machine_events_df):
         or 0.0
     )
 
+    # Get maximum timestamp for observation window
     max_t = machine_events_df.agg(F.max("time")).first()[0]
 
+    # Get first appearance time and CPU capacity for each machine
     first_appearance = machine_events_df.groupBy("machine_ID").agg(
         F.min("time").alias("first_time"), F.first("cpus").alias("cpus")
     )
 
+    # Calculate total capacity per machine
     capacity_per_machine = first_appearance.withColumn(
         "available_time", max_t - F.col("first_time")
     ).withColumn("cpu_capacity", F.col("available_time") * F.col("cpus"))
 
+    # Sum total theoretical CPU-time capacity if all machines were always online
     total_possible = (
         capacity_per_machine.agg(F.sum("cpu_capacity")).collect()[0][
             "sum(cpu_capacity)"
@@ -286,6 +296,7 @@ def analysis_2_maintenance_loss(machine_events_df):
         or 0.0
     )
 
+    # Calculate percentage
     pct_lost = (total_cpu_lost / total_possible * 100.0) if total_possible > 0 else 0.0
 
     print(pct_lost)
@@ -304,19 +315,25 @@ def analysis_3_maintenance_by_class(machine_events_df):
         DataFrame: Maintenance rate by machine class
     """
 
+    # Create window for per-machine operations ordered by time
     w = Window.partitionBy("machine_ID").orderBy("time")
+    # Get previous event type using lag to identify maintenance transitions
     df = machine_events_df.withColumn("prev_event", F.lag("event_type", 1).over(w))
 
+    # Group by CPU class and calculate maintenance statistics
     df = (
         df.groupBy("cpus")
         .agg(
+            # Count REMOVE events (1) that follow ADD events (0) - these are maintenance occurrences
             F.sum(
                 F.when(
                     (F.col("event_type") == 1) & (F.col("prev_event") == 0), 1
                 ).otherwise(0)
             ).alias("num_down"),
+            # Count distinct machines in each CPU class
             F.countDistinct("machine_ID").alias("num_machines"),
         )
+        # Calculate maintenance rate: average maintenance events per machine in each class
         .withColumn("maintenance_rate", F.col("num_down") / F.col("num_machines"))
     )
 
@@ -488,24 +505,28 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
         DataFrame: Correlation analysis results
     """
 
+    # Aggregate maximum resource requests per task from task_events
     task_requests = task_events_df.groupBy("job_ID", "task_index").agg(
         F.max("CPU_request").alias("max_cpu_request"),
         F.max("memory_request").alias("max_memory_request"),
         F.max("disk_space_request").alias("max_disk_request"),
     )
 
+    # Aggregate maximum actual resource consumption per task from task_usage
     task_consumption = task_usage_df.groupBy("job_ID", "task_index").agg(
         F.max("max_CPU_rate").alias("max_cpu_consumption"),
         F.max("max_mem_usage").alias("max_memory_consumption"),
         F.max("local_disk_space_usage").alias("max_disk_consumption"),
     )
 
+    # Join requests and consumption data to compare side-by-side
     task_analysis = task_requests.join(
         task_consumption, on=["job_ID", "task_index"], how="inner"
     )
 
     print("\n--- CPU Analysis ---")
 
+    # Find top 10 tasks that requested the most CPU
     top_cpu_requesters = (
         task_analysis.orderBy(F.desc("max_cpu_request"))
         .limit(10)
@@ -515,6 +536,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     print("Top 10 CPU Requesters:")
     top_cpu_requesters.show()
 
+    # Find top 10 tasks that actually consumed the most CPU
     top_cpu_consumers = (
         task_analysis.orderBy(F.desc("max_cpu_consumption"))
         .limit(10)
@@ -526,6 +548,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
 
     print("\n--- Memory Analysis ---")
 
+    # Find top 10 tasks that requested the most memory
     top_memory_requesters = (
         task_analysis.orderBy(F.desc("max_memory_request"))
         .limit(10)
@@ -535,6 +558,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     print("Top 10 Memory Requesters:")
     top_memory_requesters.show()
 
+    # Find top 10 tasks that actually consumed the most memory
     top_memory_consumers = (
         task_analysis.orderBy(F.desc("max_memory_consumption"))
         .limit(10)
@@ -546,6 +570,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
 
     print("\n--- Disk Analysis ---")
 
+    # Find top 10 tasks that requested the most disk space
     top_disk_requesters = (
         task_analysis.orderBy(F.desc("max_disk_request"))
         .limit(10)
@@ -555,6 +580,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
     print("Top 10 Disk Requesters:")
     top_disk_requesters.show()
 
+    # Find top 10 tasks that actually consumed the most disk space
     top_disk_consumers = (
         task_analysis.orderBy(F.desc("max_disk_consumption"))
         .limit(10)
@@ -628,16 +654,21 @@ def analysis_10_overcommitment_frequency(
         DataFrame: Overcommitment frequency results
     """
 
+    # Create window for per-task operations to track resource request changes
     task_win = Window.partitionBy("job_ID", "task_index").orderBy("time")
 
+    # Create window for cumulative sum of resource deltas per machine over time
     machine_win = Window.partitionBy("machine_ID").orderBy("time") \
                         .rowsBetween(Window.unboundedPreceding, Window.currentRow)
     
+    # Create window for global per-machine operations to find minimum values
     global_machine_win = Window.partitionBy("machine_ID")
 
+    # Get previous resource requests for each task to calculate deltas on UPDATE events
     df_deltas = task_events_df.withColumn("prev_cpu_req", F.lag("CPU_request").over(task_win)) \
                               .withColumn("prev_mem_req", F.lag("memory_request").over(task_win))
 
+    # Calculate resource deltas based on event type: +request on SCHEDULE, delta on UPDATE, -request on terminal events
     df_deltas = df_deltas.withColumn(
         "delta_cpu",
         F.when(F.col("event_type") == 1, F.col("CPU_request"))
@@ -652,14 +683,17 @@ def analysis_10_overcommitment_frequency(
          .otherwise(0.0)
     )
 
+    # Calculate cumulative resource load per machine over time (raw values may be negative)
     df_raw = df_deltas.withColumn("raw_cpu", F.sum("delta_cpu").over(machine_win)) \
                       .withColumn("raw_mem", F.sum("delta_mem").over(machine_win))
 
+    # Normalize to zero baseline by subtracting minimum value per machine
     df_load = df_raw.withColumn("min_cpu", F.min("raw_cpu").over(global_machine_win)) \
                     .withColumn("min_mem", F.min("raw_mem").over(global_machine_win)) \
                     .withColumn("total_cpu_req", F.col("raw_cpu") - F.col("min_cpu")) \
                     .withColumn("total_mem_req", F.col("raw_mem") - F.col("min_mem"))
 
+    # Prepare machine capacity data with renamed columns for joining
     m_events = machine_events_df.select(
         F.col("time").alias("m_time"),
         F.col("machine_ID"),
@@ -667,15 +701,19 @@ def analysis_10_overcommitment_frequency(
         F.col("memory").alias("m_mem")
     )
 
+    # Join with machine capacity, keeping only events after machine was added
     df_joined = df_load.join(m_events, "machine_ID").filter(F.col("time") >= F.col("m_time"))
 
+    # Create window to find most recent machine capacity for each task event
     join_win = Window.partitionBy("machine_ID", "time", "job_ID", "task_index") \
                      .orderBy(F.col("m_time").desc())
 
+    # Keep only the most recent machine capacity entry for each task event
     df_with_cap = df_joined.withColumn("rank", F.row_number().over(join_win)) \
                            .filter(F.col("rank") == 1) \
                            .drop("rank", "m_time")
 
+    # Flag overcommitment cases where cumulative load exceeds machine capacity
     df_over = df_with_cap.withColumn(
         "is_over_cpu", F.when(F.col("total_cpu_req") > F.col("m_cpus"), 1).otherwise(0)
     ).withColumn(
@@ -684,6 +722,7 @@ def analysis_10_overcommitment_frequency(
         "is_over_gen", F.when((F.col("is_over_cpu") == 1) | (F.col("is_over_mem") == 1), 1).otherwise(0)
     )
 
+    # Calculate percentage of events where resources were overcommitted
     result = df_over.select(
         (F.mean("is_over_cpu") * 100).alias("percentage_over_cpu"),
         (F.mean("is_over_mem") * 100).alias("percentage_over_mem"),
@@ -729,17 +768,21 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
         DataFrame: Analysis results with reschedule distributions
     """
     
+    # Filter out invalid events with zero timestamp
     task_events_clean = task_events.filter(F.col("time") > 0)
     
+    # Identify tasks with LOST events (6) to exclude them from analysis
     tasks_with_lost = task_events_clean.filter(F.col("event_type") == 6) \
         .select("job_ID", "task_index").distinct()
     
+    # Remove tasks with LOST events using left anti join
     task_events_clean = task_events_clean.join(
         tasks_with_lost,
         on=["job_ID", "task_index"],
         how="left_anti"
     )
     
+    # Count SCHEDULE events (1) per task to determine how many times each task was scheduled
     schedule_counts = task_events_clean.filter(F.col("event_type") == 1) \
         .groupBy("job_ID", "task_index") \
         .agg(
@@ -748,22 +791,27 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
             F.first("scheduling_class").alias("scheduling_class")
         )
     
+    # Filter terminal events: FAIL (3), FINISH (4), KILL (5)
     terminal_events = task_events_clean.filter(
         F.col("event_type").isin([3, 4, 5])
     )
     
+    # Create window to find the last terminal event for each task
     window_last = Window.partitionBy("job_ID", "task_index").orderBy(F.desc("time"))
     
+    # Get the final outcome (most recent terminal event) for each task
     final_outcomes = terminal_events.withColumn("rn", F.row_number().over(window_last)) \
         .filter(F.col("rn") == 1) \
         .select("job_ID", "task_index", F.col("event_type").alias("final_event_type"))
     
+    # Join schedule counts with final outcomes to analyze reschedule patterns
     task_analysis = schedule_counts.join(
         final_outcomes,
         on=["job_ID", "task_index"],
         how="inner"
     )
     
+    # Map terminal event types to human-readable outcomes
     task_analysis = task_analysis.withColumn(
         "final_outcome",
         F.when(F.col("final_event_type") == 3, "FAIL")
@@ -771,8 +819,10 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
         .when(F.col("final_event_type") == 5, "KILL")
     )
     
+    # Cache for reuse in multiple aggregations
     task_analysis.cache()
     
+    # Categorize tasks by number of reschedule attempts
     task_analysis = task_analysis.withColumn(
         "reschedule_category",
         F.when(F.col("schedule_count") == 1, "first_attempt")
@@ -782,6 +832,7 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
         .when(F.col("schedule_count") > 10, "10+_reschedules")
     )
     
+    # Calculate overall distribution of tasks by reschedule category
     overall_distribution = task_analysis.groupBy("reschedule_category") \
         .agg(F.count("*").alias("task_count")) \
         .withColumn(
@@ -793,6 +844,7 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
     print("\n=== OVERALL RESCHEDULE DISTRIBUTION ===")
     overall_distribution.show()
     
+    # Calculate first-attempt success rate (tasks that finished without reschedule)
     first_attempt_total = task_analysis.filter(F.col("schedule_count") == 1).count()
     first_attempt_success = task_analysis.filter(
         (F.col("schedule_count") == 1) & (F.col("final_event_type") == 4)
@@ -801,6 +853,7 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
     print(f"\nFirst attempt tasks: {first_attempt_total}")
     print(f"First attempt SUCCESS (FINISH): {first_attempt_success} ({first_attempt_success*100.0/first_attempt_total:.2f}%)")
     
+    # Group tasks by priority tier for comparative analysis
     task_analysis = task_analysis.withColumn(
         "priority_group",
         F.when(F.col("priority") == 0, "free_tier")
@@ -811,8 +864,10 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
          .otherwise("unknown")
     )
     
+    # Create window for per-priority-group percentage calculations
     window_priority = Window.partitionBy("priority_group")
     
+    # Calculate reschedule distribution within each priority group
     priority_reschedule = task_analysis.groupBy("priority_group", "reschedule_category") \
         .agg(F.count("*").alias("task_count")) \
         .withColumn(
@@ -823,6 +878,7 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
     print("\n=== RESCHEDULE DISTRIBUTION BY PRIORITY GROUP ===")
     priority_reschedule.orderBy("priority_group", "reschedule_category").show(50)
     
+    # Calculate average reschedule statistics per priority group
     avg_by_priority = task_analysis.groupBy("priority_group") \
         .agg(
             F.avg("schedule_count").alias("avg_reschedules"),
@@ -872,14 +928,15 @@ def main():
     job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_GIU}/task_usage/*")
-    machine_events = load_machine_events(spark, f"{BASE_PATH_GIU}/machine_events/*")
+    machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
+    task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+    task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
     """
-    
-    task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
+
     """
     
-    task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
+    
     machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
     """
@@ -909,8 +966,8 @@ def main():
     analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage)
     print("#10 analysis")
     analysis_10_overcommitment_frequency(machine_events, task_events)
-    """
     analysis_12_task_reschedule_and_priority_influence(task_events)
+    """
 
     spark.stop()
 
