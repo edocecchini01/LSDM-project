@@ -1053,6 +1053,7 @@ def main():
 
     BASE_PATH_EDO = "/home/edoardo/Desktop/UNI/LSDMG/proj/data"
     BASE_PATH_GIU = "/home/giuse_02/Documents/Sparks/ProjectSparks/data"
+    BASE_PATH_CLOUD = "gs://bucket_lsdm_dsc"
 
     spark = (
         SparkSession.builder.appName("LSDMG-Analysis")
@@ -1072,22 +1073,33 @@ def main():
     sc = spark.sparkContext
     sc.setLogLevel("ERROR")
 
+    """
+    #Giuseppe Di Stefano path for analysis testing
     job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_GIU}/task_usage/*")
     schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
+    """
+    
 
     """
+    #Edoardo Cecchini path for analysis testing
     machine_events = load_machine_events(spark, f"{BASE_PATH_EDO}/machine_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_EDO}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_EDO}/task_usage/*")
     schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
     """
 
+    #CLOUD path for analysis
+    job_events = load_job_events(spark, f"{BASE_PATH_CLOUD}/job_events/*")
+    task_events = load_task_events(spark, f"{BASE_PATH_CLOUD}/task_events/*")
+    task_usage = load_task_usage(spark, f"{BASE_PATH_CLOUD}/task_usage/*")
+    machine_events = load_machine_events(spark, f"{BASE_PATH_CLOUD}/machine_events/*")
+    schema_df = load_schema(spark, f"{BASE_PATH_CLOUD}/schema.csv")
+    
     task_events.cache()
     task_usage.cache()
 
-    """
     print("#1 Analysis")
     analysis_1_cpu_distribution(machine_events)
     print("#2 Analysis")
@@ -1108,12 +1120,10 @@ def main():
     analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage)
     print("#10 analysis")
     analysis_10_overcommitment_frequency(machine_events, task_events)
-    print("#12 analysis")
-    analysis_12_task_reschedule_and_priority_influence(task_events)
-    """
     print("#11_analysis")
     analysis_11_user_task(task_events)
-
+    print("#12 analysis")
+    analysis_12_task_reschedule_and_priority_influence(task_events)
     spark.stop()
 
 
