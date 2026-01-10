@@ -110,6 +110,105 @@ This finding aligns with expectations, as machines with 1.0 CPU capacity represe
 
 ---
 
+### Q4: Task Resource Request Analysis
+
+**Question:** What is the distribution of resource requests (CPU, memory, disk) across tasks?
+
+#### Implementation and Challenges:
+[Brief description of approach]
+
+#### Results:
++----------------+---------+------+
+|scheduling_class|    tasks|  jobs|
++----------------+---------+------+
+|               0|114598888|771302|
+|               1| 18055014|643916|
+|               2| 11158598|582340|
+|               3|   835788| 14684|
++----------------+---------+------+
+
+#### Observations and Interpretation:
+[Your analysis here]
+
+---
+
+### Q5: Task Execution Time Analysis
+
+**Question:** 
+Would you qualify the percentage of jobs/tasks that got killed or evicted as important?
+
+#### Implementation and Challenges:
+[Brief description of approach]
+
+#### Results:
+
+Percentage of Job killed or Evicted: 40.53%
+Percentage of Task Killed or Evicted: 32.14%
+
+#### Observations and Interpretation:
+[Your analysis here]
+
+---
+
+### Q6: Job Completion Patterns
+
+**Question:** 
+Do tasks with a low scheduling class have a higher probability of being evicted?
+
+#### Implementation and Challenges:
+[Brief description of approach]
+
+#### Results:
+Percentuale tasks evicted / total low scheduling class tasks: 5.59%
+Percentuale tasks evicted / total high scheduling class tasks: 7.40%
+
+#### Observations and Interpretation:
+[Your analysis here]
+
+---
+
+### Q7: Resource Utilization Efficiency
+
+**Question:** 
+In general, do tasks from the same job run on the same machine? Comment on the observed
+locality strategy and its pros and cons
+
+#### Implementation and Challenges:
+[Brief description of approach]
+
+#### Results:
++----------+------------------+--------------------------+---------------------+
+|    job_ID|total_task_per_job|distinct_machines_per_task|locality_distribution|
++----------+------------------+--------------------------+---------------------+
+|6261818848|              5943|                      1753|   29.496887094060238|
+|6334544871|              3036|                       841|   27.700922266139656|
+|6334525273|               300|                       100|    33.33333333333333|
+|6334459620|              2994|                       996|    33.26653306613226|
+|6275512898|              3036|                      1003|     33.0368906455863|
+|6276103240|                54|                        18|    33.33333333333333|
+|6276226189|             45771|                      7083|   15.474863996853902|
+|6345351634|              3177|                      1050|   33.050047214353164|
+|6323791794|              2679|                       852|    31.80291153415454|
+|6399112180|               168|                        50|   29.761904761904763|
+|6432966329|              1200|                       389|   32.416666666666664|
+|6268151907|              7482|                      2244|   29.991980753809145|
+|6376286391|              1503|                       497|    33.06719893546241|
+|6406577194|                45|                        15|    33.33333333333333|
+|6333178566|              1119|                       320|   28.596961572832885|
+|6323064630|              2670|                       849|   31.797752808988765|
+|6375784491|             19758|                      4820|   24.395181698552484|
+|6133390513|             17347|                      4031|    23.23744739724448|
+|6471108647|              5439|                      1683|   30.943188086045232|
+|6436049890|                69|                        23|    33.33333333333333|
++----------+------------------+--------------------------+---------------------+
+only showing top 20 rows
+
+
+#### Observations and Interpretation:
+[Your analysis here]
+
+---
+
 ### Q8: Resource Request vs. Consumption
 
 **Question:** Are the tasks that request more resources the ones that consume more resources?
@@ -143,6 +242,22 @@ This finding aligns with expectations, as machines with 1.0 CPU capacity represe
 
 ---
 
+### Q9: Resource Waste and Over-Provisioning
+
+**Question:** 
+Can we observe correlations between peaks of high resource consumption on some machines and task eviction events?
+
+#### Implementation and Challenges:
+[Brief description of approach]
+
+#### Results:
+
+
+#### Observations and Interpretation:
+[Your analysis here]
+
+---
+
 ### Q10: Resource Overcommitment Frequency
 
 **Question:** How often does it happen that the resources of a machine are over-committed?
@@ -160,6 +275,28 @@ This finding aligns with expectations, as machines with 1.0 CPU capacity represe
 
 **Interpretation:**
 
+[Your analysis here]
+
+---
+
+### Q11: Machine Heterogeneity and Its Impact
+
+**Question:** How heterogeneous is the cluster in terms of machine characteristics and how does this impact resource allocation?
+
+#### Implementation and Challenges:
+[Brief description of approach]
+
+#### Results:
+
+| Metric | Value |
+|--------|-------|
+| Number of distinct machine configurations | |
+| CPU capacity variants | |
+| Memory capacity variants | |
+| Machine distribution across configurations | |
+| Average tasks per machine type | |
+
+#### Observations and Interpretation:
 [Your analysis here]
 
 ---
