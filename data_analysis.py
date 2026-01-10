@@ -21,6 +21,7 @@ def load_machine_events(spark, path, do_cast=True):
     """
     me_cols = ["time", "machine_ID", "event_type", "platform_id", "cpus", "memory"]
     df = spark.read.csv(path, header=False, inferSchema=False).toDF(*me_cols)
+    df = df.repartition(200)
 
     if do_cast:
         df = df.select(
@@ -31,9 +32,6 @@ def load_machine_events(spark, path, do_cast=True):
             F.col("cpus").cast("float").alias("cpus"),
             F.col("memory").cast("float").alias("memory"),
         )
-
-    df = df.dropDuplicates()
-
     return df
 
 
@@ -73,6 +71,7 @@ def load_job_events(spark, path):
         "logical_job_name",
     ]
     df = spark.read.csv(path, header=False, inferSchema=False)
+    df = df.repartition(200)
     return df.toDF(*je_cols)
 
 
@@ -105,6 +104,7 @@ def load_task_events(spark, path, do_cast=True):
     ]
     df = spark.read.csv(path, header=False, inferSchema=False)
     df = df.toDF(*te_cols)
+    df = df.repartition(200)
 
     if do_cast:
         df = df.select(
@@ -122,9 +122,6 @@ def load_task_events(spark, path, do_cast=True):
             F.col("disk_space_request").cast("float").alias("disk_space_request"),
             F.col("different_machine_restrictions"),
         )
-
-    df = df.dropDuplicates()
-
     return df
 
 
@@ -165,6 +162,7 @@ def load_task_usage(spark, path, do_cast=True):
     ]
 
     df = spark.read.csv(path, header=False, inferSchema=False).toDF(*tu_cols)
+    df = df.repartition(200)
 
     if do_cast:
         df = df.select(
@@ -195,9 +193,6 @@ def load_task_usage(spark, path, do_cast=True):
             F.col("aggregation_type"),
             F.col("sampled_CPU_usage").cast("float").alias("sampled_CPU_usage"),
         )
-
-    df = df.dropDuplicates()
-
     return df
 
 
@@ -343,65 +338,93 @@ def analysis_3_maintenance_by_class(machine_events_df):
 
 def analysis_4_jobs_tasks_distribution(job_events, task_events):
     """
-    Q4: Distribution of jobs/tasks per scheduling class.
-
-    Args:
-        job_events_df: Job events DataFrame
-        task_events_df: Task events DataFrame
-
-    Returns:
-        DataFrame: Distribution results
+    Q4: Distribution per scheduling class (Side-by-side comparison).
+    Output columns: scheduling_class | tasks | jobs
     """
-    job_events_by_scheduling_class = job_events.groupBy("scheduling_class").count()
-    task_events_by_scheduling_class = task_events.groupBy("scheduling_class").count()
-    job_events_by_scheduling_class.orderBy(F.desc("scheduling_class")).show()
-    task_events_by_scheduling_class.orderBy(F.desc("scheduling_class")).show()
-    pass
+    
+    #Count of Jobs
+    jobs_dist = job_events.groupBy("scheduling_class").count() \
+                          .withColumnRenamed("count", "jobs")
+
+    #Count of task 
+    tasks_dist = task_events.groupBy("scheduling_class").count() \
+                            .withColumnRenamed("count", "tasks")
+
+    #Join between jobs and tasks
+    final_df = jobs_dist.join(tasks_dist, "scheduling_class", "outer").na.fill(0)
+
+    #Final results shown
+    result = final_df.select("scheduling_class", "tasks", "jobs") \
+                     .orderBy(F.asc("scheduling_class"))
+    result.show() 
+pass
 
 
 def analysis_5_killed_evicted_percentage(job_events, task_events):
     """
     Q5: Percentage of jobs/tasks that got killed or evicted.
-
-    Args:
-        job_events_df: Job events DataFrame
-        task_events_df: Task events DataFrame
-
-    Returns:
-        dict: Percentages for jobs and tasks
+    
+    Optimized version for cloud execution:
+    - Reduces columns immediately to save RAM (Column Pruning)
+    - Uses count_distinct() for efficient aggregation
+    - Avoids multiple full dataframe scans
     """
-    # Aggiunta di .distinct() perchè alcuni task evited potrebbero essere ricontati perchè ritornano disponibili e cambiano il loro stato finale in submit
-    # nota: aggiungendo .distinct() è stato necessario inserire anche su che parametro deve essere fatta la distizione, quindi è stato inserito anche .select()
-    total_job_events = job_events.select("job_ID").distinct().count()
-    total_task_events = task_events.select("job_ID", "task_index").distinct().count()
-
-    job_events_killed_or_evicted = (
-        job_events.filter((job_events.event_type == 5) | (job_events.event_type == 2))
-        .select("job_ID")
-        .distinct()
+    
+    # Create a lightweight dataframe with only the columns we need from job_events
+    jobs_lite = job_events.select(
+        F.col("job_ID"),                                    
+        F.col("event_type").cast("int").alias("type_int")  
     )
-    count_job = job_events_killed_or_evicted.count()
-    task_events_killed_or_evicted = (
-        task_events.filter(
-            (task_events.event_type == 5) | (task_events.event_type == 2)
-        )
-        .select("job_ID", "task_index")
-        .distinct()
-    )
-    count_task = task_events_killed_or_evicted.count()
+    
+    # Calculate total number of unique jobs in the dataset
+    total_job_events = jobs_lite.agg(F.count_distinct("job_ID")).collect()[0][0]
+    
+    # Count jobs that were either Killed (event_type=5) or Evicted (event_type=2)
+    count_job_killed = jobs_lite.filter(
+        (F.col("type_int") == 5) | (F.col("type_int") == 2)  
+    ).agg(F.count_distinct("job_ID")).collect()[0][0]        
 
-    if count_job == 0:
+    
+    tasks_lite = task_events.select(
+        F.col("job_ID"),                                    
+        F.col("task_index"),                              
+        F.col("event_type").cast("int").alias("type_int")  
+    )
+
+    # Calculate total number of unique tasks in the dataset
+    total_task_events = tasks_lite.agg(
+        F.count_distinct("job_ID", "task_index")
+    ).collect()[0][0]
+
+    # Count tasks that were either Killed or Evicted
+    count_task_killed = tasks_lite.filter(
+        (F.col("type_int") == 5) | (F.col("type_int") == 2) 
+    ).agg(
+        F.count_distinct("job_ID", "task_index")  
+    ).collect()[0][0]
+
+
+    # Report on job events: print percentage of jobs that were killed/evicted
+    if count_job_killed == 0:
         print("No job has been killed or evicted")
     else:
-        percentage_job = (count_job / total_job_events) * 100
+        # Calculate percentage: (killed_jobs / total_jobs) * 100
+        percentage_job = (count_job_killed / total_job_events) * 100
         print(f"Percentuale Job killed or Evicted: {percentage_job:.2f}%")
 
-    if count_task == 0:
+    # Report on task events: print percentage of tasks that were killed/evicted
+    if count_task_killed == 0:
         print("No task has been killed or evicted")
     else:
-        percentage_task = (count_task / total_task_events) * 100
+        # Calculate percentage: (killed_tasks / total_tasks) * 100
+        percentage_task = (count_task_killed / total_task_events) * 100
         print(f"Percentuale Task Killed or Evicted: {percentage_task:.2f}%")
-    pass
+
+    return {
+        "job_percentage": percentage_job if count_job_killed > 0 else 0,
+        "task_percentage": percentage_task if count_task_killed > 0 else 0
+    }
+pass
 
 
 def analysis_6_eviction_by_scheduling_class(task_events):
@@ -463,7 +486,7 @@ def analysis_6_eviction_by_scheduling_class(task_events):
         print(
             f"Percentuale tasks evicted / total high scheduling class tasks: {percentage_job:.2f}%"
         )
-    pass
+pass
 
 
 def analysis_7_task_locality(task_events):
@@ -490,7 +513,7 @@ def analysis_7_task_locality(task_events):
 
     print("\n---Locality distribution of tasks--- ")
     locality_distribution.show()
-    pass
+pass
 
 
 def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
@@ -589,8 +612,7 @@ def analysis_8_resource_request_vs_consumption(task_events_df, task_usage_df):
 
     print("Top 10 Disk Consumers:")
     top_disk_consumers.show()
-
-    pass
+pass
 
 
 def analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage):
@@ -652,7 +674,7 @@ def analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_u
     print(
         f"Correlation between peaks of high memory consuption on some machines and task eviction events: {mem_correlation}"
     )
-    pass
+pass
 
 
 def analysis_10_overcommitment_frequency(machine_events_df, task_events_df):
@@ -766,7 +788,7 @@ def analysis_10_overcommitment_frequency(machine_events_df, task_events_df):
 
     result.show()
 
-    pass
+pass
 
 
 # ============================================================================
@@ -880,7 +902,6 @@ def analysis_11_user_task(task_events):
     print(f"    → Random preemption by higher-priority tasks")
 
     return task_summary.orderBy(F.desc("num_reschedules"))
-
 pass
 
 
@@ -1041,7 +1062,7 @@ def analysis_12_task_reschedule_and_priority_influence(task_events):
     print("\n=== AVERAGE RESCHEDULES BY PRIORITY GROUP ===")
     avg_by_priority.show()
 
-    pass
+pass
 
 
 # ============================================================================
@@ -1073,14 +1094,14 @@ def main():
     sc = spark.sparkContext
     sc.setLogLevel("ERROR")
 
-    """
+    
     #Giuseppe Di Stefano path for analysis testing
     job_events = load_job_events(spark, f"{BASE_PATH_GIU}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_GIU}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_GIU}/task_usage/*")
+    machine_events = load_machine_events(spark, f"{BASE_PATH_GIU}/machine_events/*")
     schema_df = load_schema(spark, f"{BASE_PATH_GIU}/schema.csv")
-    """
-    
+        
 
     """
     #Edoardo Cecchini path for analysis testing
@@ -1090,16 +1111,15 @@ def main():
     schema_df = load_schema(spark, f"{BASE_PATH_EDO}/schema.csv")
     """
 
-    #CLOUD path for analysis
+    """
     job_events = load_job_events(spark, f"{BASE_PATH_CLOUD}/job_events/*")
     task_events = load_task_events(spark, f"{BASE_PATH_CLOUD}/task_events/*")
     task_usage = load_task_usage(spark, f"{BASE_PATH_CLOUD}/task_usage/*")
     machine_events = load_machine_events(spark, f"{BASE_PATH_CLOUD}/machine_events/*")
     schema_df = load_schema(spark, f"{BASE_PATH_CLOUD}/schema.csv")
+    """
+    #CLOUD path for analysis
     
-    task_events.cache()
-    task_usage.cache()
-
     print("#1 Analysis")
     analysis_1_cpu_distribution(machine_events)
     print("#2 Analysis")
