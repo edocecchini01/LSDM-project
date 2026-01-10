@@ -3,6 +3,9 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from pyspark import SparkContext, SparkConf
 
+import time
+from timeit import default_timer as timer
+
 # ============================================================================
 # DATA LOADING FUNCTIONS
 # ============================================================================
@@ -1120,30 +1123,75 @@ def main():
     """
     #CLOUD path for analysis
     
+   
     print("#1 Analysis")
+    start = timer()
     analysis_1_cpu_distribution(machine_events)
-    print("#2 Analysis")
+    end = timer()
+    print(f"Analysis 1 completed in {end - start:.4f} seconds")
+
+    print("\n#2 Analysis")
+    start = timer()
     analysis_2_maintenance_loss(machine_events)
-    print("#3 Analysis")
+    print(f"Analysis 2 completed in {timer() - start:.4f} seconds")
+
+    print("\n#3 Analysis")
+    start = timer()
     analysis_3_maintenance_by_class(machine_events)
-    print("#4 Analysis")
+    print(f"Analysis 3 completed in {timer() - start:.4f} seconds")
+
+    print("\n#4 Analysis")
+    start = timer()
     analysis_4_jobs_tasks_distribution(job_events, task_events)
-    print("#5 Analysis")
+    print(f"Analysis 4 completed in {timer() - start:.4f} seconds")
+
+    print("\n#5 Analysis")
+    start = timer()
     analysis_5_killed_evicted_percentage(job_events, task_events)
-    print("#6 Analysis")
+    print(f"Analysis 5 completed in {timer() - start:.4f} seconds")
+
+    print("\n#6 Analysis")
+    start = timer()
     analysis_6_eviction_by_scheduling_class(task_events)
-    print("#7 Analysis")
+    print(f"Analysis 6 completed in {timer() - start:.4f} seconds")
+
+    print("\n#7 Analysis")
+    start = timer()
     analysis_7_task_locality(task_events)
-    print("#8 Analysis")
+    print(f"Analysis 7 completed in {timer() - start:.4f} seconds")
+
+
+    """
+     # ========== ANALYSES 8-9 ==========
+    print("\n#8 Analysis")
+    start = timer()
     analysis_8_resource_request_vs_consumption(task_events, task_usage)
-    print("#9 analysis")
+    print(f"Analysis 8 completed in {timer() - start:.4f} seconds")
+
+    print("\n#9 Analysis")
+    start = timer()
     analysis_9_consumption_peaks_vs_eviction(machine_events, task_events, task_usage)
-    print("#10 analysis")
+    print(f"Analysis 9 completed in {timer() - start:.4f} seconds")
+    """
+
+    # ========== ANALYSES 10-12  ==========
+    
+    print("\n#10 Analysis")
+    start = timer()
     analysis_10_overcommitment_frequency(machine_events, task_events)
-    print("#11_analysis")
+    print(f"Analysis 10 completed in {timer() - start:.4f} seconds")
+
+    print("\n#11 Analysis")
+    start = timer()
     analysis_11_user_task(task_events)
-    print("#12 analysis")
+    print(f"Analysis 11 completed in {timer() - start:.4f} seconds")
+
+    print("\n#12 Analysis")
+    start = timer()
     analysis_12_task_reschedule_and_priority_influence(task_events)
+    print(f"Analysis 12 completed in {timer() - start:.4f} seconds")
+
+    
     spark.stop()
 
 
